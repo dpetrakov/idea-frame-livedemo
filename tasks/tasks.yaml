@@ -24,13 +24,13 @@ tasks:
       - text: "В DBML есть таблица users с полями id, login (unique), display_name, password_hash, created_at, updated_at"
         done: true
       - text: "Бэкенд реализует регистрацию, логин, /v1/users/me; пароли хешируются (bcrypt)"
-        done: true
+        done: false
       - text: "Эндпоинт /v1/health возвращает 200 OK (security: [])"
-        done: true
+        done: false
       - text: "Фронтенд реализует форму логина/регистрации, хранение JWT, protected роуты, API клиент с Authorization заголовком"
-        done: true
+        done: false
       - text: "Инфраструктура Docker Compose настроена: postgres, backend, frontend, caddy; .env.example создан"
-        done: true
+        done: false
     subtasks:
       - id: TK-001/AN
         role: AN
@@ -41,15 +41,15 @@ tasks:
       - id: TK-001/BE
         role: BE
         title: Реализация backend аутентификации и health
-        status: done
+        status: planned
       - id: TK-001/FE
         role: FE
         title: Экран логин/регистрация и хранение JWT
-        status: done
+        status: planned
       - id: TK-001/DV
         role: DV
         title: Переменные окружения JWT_SECRET и проверка health через прокси
-        status: done
+        status: planned
 
   - id: TK-002
     title: Инициативы — создание и просмотр (markdown)
