@@ -33,7 +33,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: #/components/schemas/Health
+                $ref: '#/components/schemas/Health'
   /v1/auth/register:
     post:
       tags: [Auth]
@@ -45,18 +45,18 @@ paths:
         content:
           application/json:
             schema:
-              $ref: #/components/schemas/RegisterRequest
+              $ref: '#/components/schemas/RegisterRequest'
       responses:
         201:
           description: Зарегистрирован и аутентифицирован
           content:
             application/json:
               schema:
-                $ref: #/components/schemas/AuthResponse
-        400: { $ref: #/components/responses/BadRequest }
-        409: { $ref: #/components/responses/Conflict }
-        422: { $ref: #/components/responses/UnprocessableEntity }
-        500: { $ref: #/components/responses/InternalServerError }
+                $ref: '#/components/schemas/AuthResponse'
+        400: { $ref: '#/components/responses/BadRequest' }
+        409: { $ref: '#/components/responses/Conflict' }
+        422: { $ref: '#/components/responses/UnprocessableEntity' }
+        500: { $ref: '#/components/responses/InternalServerError' }
   /v1/auth/login:
     post:
       tags: [Auth]
@@ -68,17 +68,17 @@ paths:
         content:
           application/json:
             schema:
-              $ref: #/components/schemas/LoginRequest
+              $ref: '#/components/schemas/LoginRequest'
       responses:
         200:
           description: Успешная аутентификация
           content:
             application/json:
               schema:
-                $ref: #/components/schemas/AuthResponse
-        401: { $ref: #/components/responses/Unauthorized }
-        422: { $ref: #/components/responses/UnprocessableEntity }
-        500: { $ref: #/components/responses/InternalServerError }
+                $ref: '#/components/schemas/AuthResponse'
+        401: { $ref: '#/components/responses/Unauthorized' }
+        422: { $ref: '#/components/responses/UnprocessableEntity' }
+        500: { $ref: '#/components/responses/InternalServerError' }
   /v1/users/me:
     get:
       tags: [Users]
@@ -90,9 +90,9 @@ paths:
           content:
             application/json:
               schema:
-                $ref: #/components/schemas/User
-        401: { $ref: #/components/responses/Unauthorized }
-        500: { $ref: #/components/responses/InternalServerError }
+                $ref: '#/components/schemas/User'
+        401: { $ref: '#/components/responses/Unauthorized' }
+        500: { $ref: '#/components/responses/InternalServerError' }
   /v1/initiatives:
     get:
       tags: [Initiatives]
@@ -130,9 +130,9 @@ paths:
           content:
             application/json:
               schema:
-                $ref: #/components/schemas/InitiativePage
-        401: { $ref: #/components/responses/Unauthorized }
-        500: { $ref: #/components/responses/InternalServerError }
+                $ref: '#/components/schemas/InitiativePage'
+        401: { $ref: '#/components/responses/Unauthorized' }
+        500: { $ref: '#/components/responses/InternalServerError' }
     post:
       tags: [Initiatives]
       summary: Создать инициативу
@@ -142,18 +142,18 @@ paths:
         content:
           application/json:
             schema:
-              $ref: #/components/schemas/InitiativeCreate
+              $ref: '#/components/schemas/InitiativeCreate'
       responses:
         201:
           description: Создано
           content:
             application/json:
               schema:
-                $ref: #/components/schemas/Initiative
-        400: { $ref: #/components/responses/BadRequest }
-        401: { $ref: #/components/responses/Unauthorized }
-        422: { $ref: #/components/responses/UnprocessableEntity }
-        500: { $ref: #/components/responses/InternalServerError }
+                $ref: '#/components/schemas/Initiative'
+        400: { $ref: '#/components/responses/BadRequest' }
+        401: { $ref: '#/components/responses/Unauthorized' }
+        422: { $ref: '#/components/responses/UnprocessableEntity' }
+        500: { $ref: '#/components/responses/InternalServerError' }
   /v1/initiatives/{id}:
     get:
       tags: [Initiatives]
@@ -170,10 +170,10 @@ paths:
           content:
             application/json:
               schema:
-                $ref: #/components/schemas/Initiative
-        401: { $ref: #/components/responses/Unauthorized }
-        404: { $ref: #/components/responses/NotFound }
-        500: { $ref: #/components/responses/InternalServerError }
+                $ref: '#/components/schemas/Initiative'
+        401: { $ref: '#/components/responses/Unauthorized' }
+        404: { $ref: '#/components/responses/NotFound' }
+        500: { $ref: '#/components/responses/InternalServerError' }
   /v1/initiatives/{id}/attributes:
     patch:
       tags: [Initiatives]
@@ -189,19 +189,19 @@ paths:
         content:
           application/json:
             schema:
-              $ref: #/components/schemas/InitiativeAttributesUpdate
+              $ref: '#/components/schemas/InitiativeAttributesUpdate'
       responses:
         200:
           description: Обновлено
           content:
             application/json:
               schema:
-                $ref: #/components/schemas/Initiative
-        400: { $ref: #/components/responses/BadRequest }
-        401: { $ref: #/components/responses/Unauthorized }
-        404: { $ref: #/components/responses/NotFound }
-        422: { $ref: #/components/responses/UnprocessableEntity }
-        500: { $ref: #/components/responses/InternalServerError }
+                $ref: '#/components/schemas/Initiative'
+        400: { $ref: '#/components/responses/BadRequest' }
+        401: { $ref: '#/components/responses/Unauthorized' }
+        404: { $ref: '#/components/responses/NotFound' }
+        422: { $ref: '#/components/responses/UnprocessableEntity' }
+        500: { $ref: '#/components/responses/InternalServerError' }
   /v1/initiatives/{id}/assignee:
     patch:
       tags: [Initiatives]
@@ -217,19 +217,19 @@ paths:
         content:
           application/json:
             schema:
-              $ref: #/components/schemas/InitiativeAssigneeUpdate
+              $ref: '#/components/schemas/InitiativeAssigneeUpdate'
       responses:
         200:
           description: Обновлено
           content:
             application/json:
               schema:
-                $ref: #/components/schemas/Initiative
-        400: { $ref: #/components/responses/BadRequest }
-        401: { $ref: #/components/responses/Unauthorized }
-        404: { $ref: #/components/responses/NotFound }
-        422: { $ref: #/components/responses/UnprocessableEntity }
-        500: { $ref: #/components/responses/InternalServerError }
+                $ref: '#/components/schemas/Initiative'
+        400: { $ref: '#/components/responses/BadRequest' }
+        401: { $ref: '#/components/responses/Unauthorized' }
+        404: { $ref: '#/components/responses/NotFound' }
+        422: { $ref: '#/components/responses/UnprocessableEntity' }
+        500: { $ref: '#/components/responses/InternalServerError' }
   /v1/initiatives/{id}/comments:
     get:
       tags: [Comments]
@@ -260,10 +260,10 @@ paths:
           content:
             application/json:
               schema:
-                $ref: #/components/schemas/CommentList
-        401: { $ref: #/components/responses/Unauthorized }
-        404: { $ref: #/components/responses/NotFound }
-        500: { $ref: #/components/responses/InternalServerError }
+                $ref: '#/components/schemas/CommentList'
+        401: { $ref: '#/components/responses/Unauthorized' }
+        404: { $ref: '#/components/responses/NotFound' }
+        500: { $ref: '#/components/responses/InternalServerError' }
     post:
       tags: [Comments]
       summary: Добавить комментарий к инициативе
@@ -278,19 +278,19 @@ paths:
         content:
           application/json:
             schema:
-              $ref: #/components/schemas/CommentCreate
+              $ref: '#/components/schemas/CommentCreate'
       responses:
         201:
           description: Создано
           content:
             application/json:
               schema:
-                $ref: #/components/schemas/Comment
-        400: { $ref: #/components/responses/BadRequest }
-        401: { $ref: #/components/responses/Unauthorized }
-        404: { $ref: #/components/responses/NotFound }
-        422: { $ref: #/components/responses/UnprocessableEntity }
-        500: { $ref: #/components/responses/InternalServerError }
+                $ref: '#/components/schemas/Comment'
+        400: { $ref: '#/components/responses/BadRequest' }
+        401: { $ref: '#/components/responses/Unauthorized' }
+        404: { $ref: '#/components/responses/NotFound' }
+        422: { $ref: '#/components/responses/UnprocessableEntity' }
+        500: { $ref: '#/components/responses/InternalServerError' }
 components:
   securitySchemes:
     bearerAuth:
@@ -373,7 +373,7 @@ components:
           type: string
           description: JWT Bearer token (TTL 24h)
         user:
-          $ref: #/components/schemas/User
+          $ref: '#/components/schemas/User'
     InitiativeCreate:
       type: object
       required: [title, descriptionMd]
@@ -471,7 +471,7 @@ components:
         items:
           type: array
           items:
-            $ref: #/components/schemas/Initiative
+            $ref: '#/components/schemas/Initiative'
         total:
           type: integer
           format: int32
@@ -509,40 +509,40 @@ components:
         items:
           type: array
           items:
-            $ref: #/components/schemas/Comment
+            $ref: '#/components/schemas/Comment'
   responses:
     BadRequest:
       description: Неверный запрос
       content:
         application/json:
-          schema: { $ref: #/components/schemas/Error }
+          schema: { $ref: '#/components/schemas/Error' }
     Unauthorized:
       description: Неавторизован
       content:
         application/json:
-          schema: { $ref: #/components/schemas/Error }
+          schema: { $ref: '#/components/schemas/Error' }
     Forbidden:
       description: Доступ запрещён
       content:
         application/json:
-          schema: { $ref: #/components/schemas/Error }
+          schema: { $ref: '#/components/schemas/Error' }
     NotFound:
       description: Не найдено
       content:
         application/json:
-          schema: { $ref: #/components/schemas/Error }
+          schema: { $ref: '#/components/schemas/Error' }
     Conflict:
       description: Конфликт/дубликат
       content:
         application/json:
-          schema: { $ref: #/components/schemas/Error }
+          schema: { $ref: '#/components/schemas/Error' }
     UnprocessableEntity:
       description: Ошибка валидации
       content:
         application/json:
-          schema: { $ref: #/components/schemas/Error }
+          schema: { $ref: '#/components/schemas/Error' }
     InternalServerError:
       description: Внутренняя ошибка сервера
       content:
         application/json:
-          schema: { $ref: #/components/schemas/Error }
+          schema: { $ref: '#/components/schemas/Error' }
