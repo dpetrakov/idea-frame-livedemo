@@ -263,19 +263,40 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
 
 FROM node:20-alpine AS build
 WORKDIR /app
+
+# Vite читает VITE_* на этапе сборки (build‑time), а не в рантайме
+ARG VITE_API_BASE=/api
+ENV VITE_API_BASE=${VITE_API_BASE}
+
 COPY package*.json ./
 RUN npm ci
 COPY . .
 RUN npm run build   # Vite build → dist/
 
-# Простая и надёжная раздача статических файлов
+# Простая и надёжная раздача статических файлов (SPA fallback обязателен)
 FROM caddy:2-alpine
 COPY --from=build /app/dist /usr/share/caddy
-# (Маршрутизацию /api/* ведёт внешний caddy-прокси из docker-compose)
+RUN printf ":3000 {\n  root * /usr/share/caddy\n  file_server\n  try_files {path} /index.html\n}\n" > /etc/caddy/Caddyfile
 EXPOSE 3000
 ```
 
-> В `docker-compose.yml` внешний `caddy` проксирует `/api/*` на backend, остальное — на frontend.
+> В `docker-compose.yml` внешний `caddy` проксирует `/api/*` на backend, остальное — на frontend. Внутренний `caddy` в контейнере фронтенда обязан содержать SPA‑fallback (`try_files {path} /index.html`).
+
+Фрагмент `infra/docker-compose.yml` (передача build‑args для Vite):
+```yaml
+frontend:
+  build:
+    context: ../app/frontend
+    dockerfile: Dockerfile
+    args:
+      - VITE_API_BASE=${VITE_API_BASE:-/api}
+  expose:
+    - "${FRONTEND_PORT:-3000}"
+```
+
+Важно:
+- Переменные `VITE_*` доступны приложению только если заданы на этапе сборки (через `ARG`/`ENV`).
+- Передача `VITE_API_BASE` через `environment` на рантайме не повлияет на собранную статику.
 
 ---
 
@@ -287,6 +308,10 @@ EXPOSE 3000
 - API‑клиент читает `VITE_API_BASE`, добавляет `Authorization` при наличии токена, корректно обрабатывает 401/4xx/5xx.  
 - UI поддерживает состояния loading/empty/error/success.  
 - Docker‑сборка создаёт статику и запускается на caddy‑образе.
+
+- Dockerfile фронтенда генерирует Caddyfile с `file_server` и SPA‑fallback `try_files {path} /index.html`.  
+- В `docker-compose.yml` для сервиса `frontend` передан `build.args.VITE_API_BASE`.  
+- В репозитории присутствует `.env.example` с переменной `VITE_API_BASE` (и дефолтом `/api`).
 
 - Весь пользовательский интерфейс на русском языке (ru‑RU); отсутствуют англоязычные надписи в UI.
 - Компоненты и стили используют токены из `shared/styles/tokens.css` и базовые `shared/ui/*` из п.3; расхождения отсутствуют.
@@ -304,3 +329,19 @@ EXPOSE 3000
 - **package-lock.json обязательно коммитить** — фиксирует точные версии зависимостей для `npm ci`
 - **Исключать из VCS**: `node_modules/`, `dist/`, `build/`, кэш-директории (`.vite/`, `.cache/`, `.parcel-cache/`)
 - **Логи и временные файлы**: `npm-debug.log*`, `yarn-debug.log*` добавлять в .gitignore
+
+## 12) Переменные окружения фронтенда (`.env.example`)
+
+Используемые переменные (минимально необходимое):
+
+```env
+# Базовый URL для API (должен совпадать с маршрутом reverse_proxy внешнего Caddy)
+VITE_API_BASE=/api
+
+# Порт внутреннего Caddy, который отдаёт статику фронтенда
+FRONTEND_PORT=3000
+```
+
+Примечания:
+- `VITE_API_BASE` должен быть доступен на этапе сборки (`docker build` через `build.args`).  
+- На проде значение обычно `/api`, а внешний Caddy проксирует `/api/*` → backend.
