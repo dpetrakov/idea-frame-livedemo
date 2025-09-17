@@ -1,164 +1,138 @@
-## Стратегия развертывания (Docker Compose + Caddy)
-
-Домен публикации: ideaframe.dimlight.online
-
-### Основные положения
-- Развёртывание через Docker Compose.
-- Caddy выступает обратным прокси с автоматическим TLS (Let’s Encrypt).
-- Все секреты и служебные параметры — ТОЛЬКО в файле `.env` (в корне репозитория) + `./.env.example` без секретов.
-- Контейнеры `backend` и `frontend` собираются на лету из `app/backend/Dockerfile` и `app/frontend/Dockerfile`.
-- Миграции PostgreSQL выполняются автоматически при старте бэкенда (golang-migrate), затем запускается приложение.
-
+---
+title: Стратегия развертывания — IdeaFrame
+status: draft
+lastUpdated: 2025-09-17
+dependsOn: docs/architecture.md, docs/openapi.yaml
+appUrl: ideaframe.dimlight.online
 ---
 
-## 1) Предпосылки и требования
-- DNS: A/AAAA записи домена `ideaframe.dimlight.online` указывают на сервер.
-- Открыты порты 80 и 443 на сервере (файервол, облачные правила).
-- Установлены Docker и Docker Compose.
-- Git установлен; деплой осуществляется из корня репозитория.
+## Обзор
 
-Опционально: e‑mail для Let’s Encrypt уведомлений — переменная `CADDY_EMAIL`.
+Цель: развернуть приложение IdeaFrame на домене ideaframe.dimlight.online с автоматическими TLS‑сертификатами и маршрутизацией через Caddy. Развёртывание выполняется с помощью Docker Compose, все секреты и переменные — только в файле `.env` в корне репозитория.
 
----
+Ключевые решения:
+- **Docker Compose** управляет сервисами: `postgres`, `backend`, `frontend`, `caddy`.
+- **Caddy** завершает TLS (Let's Encrypt) и проксирует:
+  - `https://ideaframe.dimlight.online/api/* → backend`;
+  - весь остальной трафик → `frontend`.
+- **Миграции БД** запускаются автоматически из контейнера `backend` (через `migrate`) при старте.
 
-## 2) Переменные окружения (.env)
-Создайте файл `.env` в корне репозитория (рядом с `README.md`). Значения приведены как пример; отредактируйте под себя. Обязательно укажите домен.
+## Предварительные требования
+
+- Сервер с публичным IP (Linux, Docker Engine 25+, Docker Compose V2).
+- DNS‑запись для `ideaframe.dimlight.online`:
+  - `A` (и при необходимости `AAAA`) указывает на публичный IP сервера.
+- Открытые порты: `80/tcp` и `443/tcp` (входящий трафик к Caddy).
+
+## Переменные окружения (.env)
+
+Файл `.env` хранится в корне репозитория. Пример шаблона (`.env.example`):
 
 ```dotenv
-# Общее
 APP_URL=ideaframe.dimlight.online
-CADDY_EMAIL=                     # рекомендовано указать (для уведомлений TLS), например, admin@dimlight.online
+CADDY_EMAIL=admin@example.com
 
-# Auth/секреты
-JWT_SECRET=change_me_strong_secret
+JWT_SECRET=change_me
 
-# Postgres
-POSTGRES_USER=app
-POSTGRES_PASSWORD=change_me_db_password
-POSTGRES_DB=app
+POSTGRES_USER=idea
+POSTGRES_PASSWORD=change_me
+POSTGRES_DB=idea
 POSTGRES_HOST=postgres
 POSTGRES_PORT=5432
-DATABASE_URL=postgres://$POSTGRES_USER:$POSTGRES_PASSWORD@$POSTGRES_HOST:$POSTGRES_PORT/$POSTGRES_DB?sslmode=disable
 
-# Порты сервисов (внутри сети Docker)
+# Явная строка подключения; не используйте вложенные переменные
+DATABASE_URL=postgres://idea:change_me@postgres:5432/idea?sslmode=disable
+
 BACKEND_PORT=8080
-FRONTEND_PORT=3000
+FRONTEND_PORT=80
 ```
 
-Рядом положите `.env.example` без секретов (подставьте безопасные заглушки).
+Запуск команд `docker compose` — всегда из корня репозитория с явной передачей `.env` и файла Compose:
 
----
-
-## 3) Обзор Docker Compose (сервисы)
-Планируется 4 сервиса:
-- `postgres` — PostgreSQL + volume + healthcheck.
-- `backend` — Go‑сервис; при старте выполняет миграции и запускает приложение.
-- `frontend` — React; собирается в статические файлы.
-- `caddy` — HTTPS reverse proxy: `/api/* → backend`, остальное — `frontend`.
-
-Рекомендуемая структура каталогов для инфраструктуры:
-```
-infra/
-  docker-compose.yml
-  caddy/
-    Caddyfile
+```bash
+docker compose --env-file ./.env -f infra/docker-compose.yml up -d
 ```
 
----
+## Docker Compose (infra/docker-compose.yml)
 
-## 4) Пример docker-compose.yml
-Разместите файл в `infra/docker-compose.yml`.
+Compose файл управляет сборкой образов и запуском контейнеров. Не используйте устаревший ключ `version`.
 
 ```yaml
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: postgres
+    container_name: idea-postgres
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER"]
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 5s
       timeout: 3s
-      retries: 20
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    networks:
-      - app
+      retries: 10
+    restart: unless-stopped
 
   backend:
     build:
-      context: ..
-      dockerfile: app/backend/Dockerfile
-    container_name: backend
+      context: ../app/backend
+      dockerfile: Dockerfile
+    container_name: idea-backend
     depends_on:
       postgres:
         condition: service_healthy
     environment:
       DATABASE_URL: ${DATABASE_URL}
-      BACKEND_PORT: ${BACKEND_PORT}
       JWT_SECRET: ${JWT_SECRET}
+    volumes:
+      - ../db/migrations:/migrations:ro
+    command: sh -c "migrate -path /migrations -database ${DATABASE_URL} up && /app/app"
     expose:
       - "${BACKEND_PORT}"
-    networks:
-      - app
+    restart: unless-stopped
 
   frontend:
     build:
       context: ../app/frontend
       dockerfile: Dockerfile
-    container_name: frontend
-    environment:
-      - NODE_ENV=production
-    command:
-      - caddy
-      - file-server
-      - --root
-      - /usr/share/caddy
-      - --listen
-      - ":${FRONTEND_PORT}"
+    container_name: idea-frontend
     expose:
       - "${FRONTEND_PORT}"
-    networks:
-      - app
+    restart: unless-stopped
 
   caddy:
     image: caddy:2-alpine
-    container_name: caddy
+    container_name: idea-caddy
+    depends_on:
+      - backend
+      - frontend
     ports:
       - "80:80"
       - "443:443"
     environment:
       APP_URL: ${APP_URL}
+      CADDY_EMAIL: ${CADDY_EMAIL}
       BACKEND_PORT: ${BACKEND_PORT}
       FRONTEND_PORT: ${FRONTEND_PORT}
-      CADDY_EMAIL: ${CADDY_EMAIL}
     volumes:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
-    depends_on:
-      - backend
-      - frontend
-    networks:
-      - app
-
-networks:
-  app:
-    driver: bridge
+    restart: unless-stopped
 
 volumes:
-  pgdata:
+  postgres_data:
   caddy_data:
   caddy_config:
 ```
 
----
+Пути `context` и монтирование `../db/migrations` указаны относительно каталога `infra/`.
 
-## 5) Конфигурация Caddy
-Создайте файл `infra/caddy/Caddyfile` со следующим содержимым. Здесь используются переменные окружения из `.env`:
+## Caddyfile (infra/caddy/Caddyfile)
+
+Обратный прокси с автоматическим TLS и маршрутизацией.
 
 ```caddyfile
 {
@@ -170,75 +144,42 @@ volumes:
 
   @api path /api/*
   handle @api {
-    reverse_proxy backend:{$BACKEND_PORT}
+    reverse_proxy backend:${BACKEND_PORT}
   }
 
   handle {
-    reverse_proxy frontend:{$FRONTEND_PORT}
+    reverse_proxy frontend:${FRONTEND_PORT}
   }
 }
 ```
 
-Пояснения:
-- `email` — рекомендуем указать `CADDY_EMAIL` для уведомлений Let’s Encrypt.
-- Caddy автоматически выпустит и обновит TLS‑сертификат для `APP_URL`.
+## Dockerfiles
 
----
-
-## 6) Dockerfiles (сборка на лету)
-
-### Backend — `app/backend/Dockerfile`
-Образ включает бинарь приложения и `migrate`. Рекомендуется запуск через entrypoint‑скрипт, выполняющий миграции перед стартом.
+Backend (`app/backend/Dockerfile`) — многостадийная сборка, включает `migrate`:
 
 ```dockerfile
 # syntax=docker/dockerfile:1
 
 FROM golang:1.22-alpine AS build
-RUN apk add --no-cache git
 WORKDIR /src
-COPY app/backend/go.mod app/backend/go.sum ./
+RUN apk add --no-cache git
+COPY go.mod go.sum ./
 RUN go mod download
-COPY app/backend/ .
-# Собираем приложение
+COPY . .
 RUN CGO_ENABLED=0 go build -o /out/app ./cmd/server
-# Устанавливаем migrate CLI
 RUN go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest
 
 FROM alpine:3.20
-RUN apk add --no-cache ca-certificates bash
+RUN apk add --no-cache ca-certificates
 WORKDIR /app
 COPY --from=build /out/app /app/app
 COPY --from=build /go/bin/migrate /usr/local/bin/migrate
-# Скопируйте миграции в образ (при сборке backend):
-COPY db/migrations /app/migrations
 ENV GIN_MODE=release
 EXPOSE 8080
-COPY app/backend/entrypoint.sh /app/entrypoint.sh
-RUN chmod +x /app/entrypoint.sh
-ENTRYPOINT ["/app/entrypoint.sh"]
+ENTRYPOINT ["/app/app"]
 ```
 
-`app/backend/entrypoint.sh`:
-```bash
-#!/usr/bin/env bash
-set -euo pipefail
-
-echo "[backend] Waiting for database..."
-for i in {1..60}; do
-  if migrate -path /app/migrations -database "$DATABASE_URL" version >/dev/null 2>&1; then
-    break
-  fi
-  sleep 1
-done
-
-echo "[backend] Running migrations..."
-migrate -path /app/migrations -database "$DATABASE_URL" up
-
-echo "[backend] Starting app..."
-exec /app/app
-```
-
-### Frontend — `app/frontend/Dockerfile`
+Frontend (`app/frontend/Dockerfile`) — сборка и статика, отдаётся самим контейнером (порт 80):
 
 ```dockerfile
 # syntax=docker/dockerfile:1
@@ -252,75 +193,93 @@ RUN npm run build
 
 FROM caddy:2-alpine
 COPY --from=build /app/build /usr/share/caddy
-EXPOSE 3000
+EXPOSE 80
 ```
 
----
+## Процедуры запуска и обновления
 
-## 7) Команды
 Первый запуск:
+
 ```bash
-cd infra
-docker compose build --no-cache
-docker compose up -d
+docker compose --env-file ./.env -f infra/docker-compose.yml build --no-cache
+docker compose --env-file ./.env -f infra/docker-compose.yml up -d
 ```
 
-Пересборка и рестарт:
-```bash
-cd infra
-docker compose up -d --build
-```
+Обновление с пересборкой:
 
-Логи:
 ```bash
-cd infra
-docker compose logs -f backend
-docker compose logs -f caddy
+git pull
+docker compose --env-file ./.env -f infra/docker-compose.yml up -d --build
 ```
 
 Остановка:
+
 ```bash
-cd infra
-docker compose down
+docker compose --env-file ./.env -f infra/docker-compose.yml down
 ```
 
----
+## Healthchecks и smoketest
 
-## 8) Healthcheck и smoketest
-- Postgres: настраивается в compose через `pg_isready`.
-- Backend: проверьте `/api/health` (должен возвращать 200 OK).
-- Caddy/Frontend: корень сайта.
+Проверка состояния контейнеров:
 
-Smoketest после старта:
 ```bash
-curl -I https://ideaframe.dimlight.online/
-curl -I https://ideaframe.dimlight.online/api/health
+docker compose --env-file ./.env -f infra/docker-compose.yml ps
+docker compose --env-file ./.env -f infra/docker-compose.yml logs -f caddy
+docker compose --env-file ./.env -f infra/docker-compose.yml logs -f backend
 ```
 
-Оба запроса должны вернуть 200.
+Smoketest внешнего контура:
 
----
+```bash
+curl -fsSL https://ideaframe.dimlight.online/api/v1/health
+```
 
-## 9) Обновления и откаты
-- Обновление приложения: `docker compose up -d --build`.
-- Откат: переключитесь на предыдущий commit в Git и выполните ту же команду.
+Ожидаемый ответ:
 
----
+```json
+{ "status": "ok" }
+```
 
-## 11) Чек‑лист перед продом
-- [ ] DNS настроен: `ideaframe.dimlight.online → сервер`.
-- [ ] Открыты порты 80/443.
-- [ ] Заполнен `.env`, указан `APP_URL=ideaframe.dimlight.online`.
-- [ ] `CADDY_EMAIL` указан (рекомендуется).
-- [ ] Бэкенд запускает миграции при старте; при ошибке — контейнер падает.
-- [ ] Caddy проксирует `/api/*` → `backend`, остальное → `frontend`.
-- [ ] Smoketest проходит: `/` и `/api/health` возвращают 200.
+## Роллбек
 
----
+- Если обновление некорректно: `git checkout <предыдущий_тэг_или_commit>` и повторить `up -d --build`.
+- При необходимости вернуть данные БД — восстановить из резервной копии (см. ниже).
 
-## Примечания
-- Значения секретов в этом документе — примеры; используйте уникальные сильные пароли.
-- В проде не публикуйте порты `backend` и `frontend` наружу — только через `caddy` (80/443).
-- Если у сервера нет публичного IPv6, проверьте DNS AAAA-записи; при необходимости удалите.
+## Резервное копирование БД
+
+Экспорт:
+
+```bash
+docker compose --env-file ./.env -f infra/docker-compose.yml exec -T postgres \
+  pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -F t > backup_$(date +%Y%m%d_%H%M%S).tar
+```
+
+Импорт:
+
+```bash
+cat backup_YYYYMMDD_HHMMSS.tar | \
+docker compose --env-file ./.env -f infra/docker-compose.yml exec -T postgres \
+  pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --clean
+```
+
+## Безопасность и эксплуатация
+
+- Все секреты только в `.env`; не коммитить `.env` в VCS. Коммитить `.env.example` без значений.
+- Минимальные привилегии БД, надёжные пароли, ротация секретов.
+- Ограничить SSH‑доступ, настроить автоматические обновления ОС/патчей.
+
+## Чек‑лист
+
+- [ ] DNS‑запись `ideaframe.dimlight.online` указывает на сервер.
+- [ ] `APP_URL=ideaframe.dimlight.online` в `.env`.
+- [ ] Аккаунт для LE (`CADDY_EMAIL`) указан.
+- [ ] Все секреты заполнены в `.env`; `.env.example` добавлен в репозиторий.
+- [ ] Миграции доступны в `db/migrations`; backend применяет их при старте.
+- [ ] `Caddyfile` проксирует `/api/*` на backend, остальное — на frontend.
+- [ ] Smoketest `/api/v1/health` возвращает `{"status":"ok"}` по HTTPS.
+
+## Примечания по архитектуре
+
+Изначально в архитектуре миграции упоминались как отдельная job, однако для упрощения эксплуатации миграции выполняются внутри контейнера `backend` при старте (через `migrate`), что соответствует принятой стратегиe развертывания.
 
 

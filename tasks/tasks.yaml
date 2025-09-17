@@ -10,7 +10,7 @@ tasks:
   - id: TK-001
     title: Пользователи и аутентификация (JWT 24h)
     order: 10
-    status: done
+    status: pec-prepared
     frRefs: [FR7]
     context:
       prd: docs/prd.md#fr7-регистрация-и-вход-аутентификация-jwt-24-часа

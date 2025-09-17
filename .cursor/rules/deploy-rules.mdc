@@ -47,6 +47,13 @@ FRONTEND_PORT=3000
 
 > Примечание: для `DATABASE_URL` указывайте полную строку подключения явно, без вложенных переменных (например, `postgres://$POSTGRES_USER:...`). Docker Compose и инструменты (CLI миграций, драйверы) могут интерполировать вложенные переменные по‑разному. Используйте одну и ту же явную строку для приложения и миграций.
 
+**Расположение и использование `.env`**
+- Файл `.env` хранится в **корне репозитория** (`./.env`).
+- Все команды `docker compose` запускаются **из корня репозитория** с явной передачей файла окружения и compose‑файла:
+  ```bash
+  docker compose --env-file ./.env -f infra/docker-compose.yml up -d
+  ```
+
 ---
 
 ## 3. Docker Compose (упрощённая схема сервисов)
@@ -141,21 +148,21 @@ EXPOSE 3000
 
 - Первый запуск/деплой:  
   ```bash
-  docker compose build --no-cache
-  docker compose up -d
+  docker compose --env-file ./.env -f infra/docker-compose.yml build --no-cache
+  docker compose --env-file ./.env -f infra/docker-compose.yml up -d
   ```
 - Пересборка и рестарт:  
   ```bash
-  docker compose up -d --build
+  docker compose --env-file ./.env -f infra/docker-compose.yml up -d --build
   ```
 - Логи:  
   ```bash
-  docker compose logs -f backend
-  docker compose logs -f caddy
+  docker compose --env-file ./.env -f infra/docker-compose.yml logs -f backend
+  docker compose --env-file ./.env -f infra/docker-compose.yml logs -f caddy
   ```
 - Остановка:  
   ```bash
-  docker compose down
+  docker compose --env-file ./.env -f infra/docker-compose.yml down
   ```
 
 ---

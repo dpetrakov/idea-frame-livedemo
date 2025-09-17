@@ -65,6 +65,11 @@ app/backend/
 
 - Конфигурация **только из env** (compose прокидывает `.env`). Минимум:
   - `PORT` (напр. `8080`), `DATABASE_URL`, `JWT_SECRET`, `ENV` (`dev`/`prod`).
+- Расположение `.env`: файл находится в **корне репозитория** (`./.env`).
+- Запуск Docker Compose выполняется **из корня репозитория** с явной передачей пути к `.env` и compose‑файлу:
+  ```bash
+  docker compose --env-file ./.env -f infra/docker-compose.yml up -d
+  ```
 - `main.go` реализует:
   - инициализацию логгера (`log/slog`, формат JSON);
   - загрузку конфигурации;
@@ -201,7 +206,7 @@ func main() {
 # syntax=docker/dockerfile:1
 
 # --- build stage ---
-FROM golang:1.22-alpine AS build
+FROM golang:1.25-alpine AS build
 WORKDIR /src
 RUN apk add --no-cache git ca-certificates upx
 
@@ -243,6 +248,7 @@ ENTRYPOINT ["/app/app"]
 - `command` в compose не переопределяет ENTRYPOINT, если это не нужно.  
 - Переменные окружения — только через `.env`.  
 - Пробрасываем порт как `expose` (за прокси отвечает Caddy).
+- Все вызовы `docker compose` выполняются **из корня репозитория**; всегда указывать `--env-file ./.env` и путь к compose‑файлу `-f infra/docker-compose.yml`.
 
 ---
 
