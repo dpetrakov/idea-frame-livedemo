@@ -1,0 +1,298 @@
+---
+description: Использовать это правило для разработки **frontend** на React
+alwaysApply: false
+---
+# Rules: Frontend Development (React) — structure, architecture, mobile‑first design system
+
+> **Description**  
+> Использовать это правило для разработки **frontend** на React: структура проекта, архитектура слоёв, подход к работе с API, состояние и маршрутизация, мобиль‑first UI. Включает упрощённую **дизайн‑систему** (цвета/типы/отступы/компоненты) и инструкции по сборке **оптимизированного Docker‑образа** для продакшена.  
+> Юнит‑тесты в live‑demo **не требуются**, но остальные практики качества сохраняем.
+
+> **Filename & Location**  
+> Исходники фронтенда: `app/frontend/`.
+
+> **Dependencies**  
+> Фронтенд реализуется по контрактам `docs/openapi.yaml` (OpenAPI 3.0.3) и опирается на `docs/prd.md`, `docs/architecture.md`, `db/schema.dbml`, `docs/deployment.md`. Аутентификация — JWT 24h (Bearer) между фронтом и бэком.
+
+---
+
+## 1) Целевая структура `app/frontend/`
+
+```
+app/frontend/
+├─ src/
+│  ├─ app/
+│  │  ├─ providers.tsx           # React Query, Router, Theme, ErrorBoundary
+│  │  └─ routes.tsx              # объявление маршрутов
+│  ├─ pages/                      # страницы (маршрутизируемые)
+│  │  ├─ Login.tsx
+│  │  ├─ InitiativesList.tsx
+│  │  └─ InitiativeDetails.tsx
+│  ├─ features/                   # фичи (самодостаточные куски UI+логика)
+│  │  ├─ auth/
+│  │  │  ├─ api.ts               # вызовы /auth
+│  │  │  ├─ useAuth.ts           # хук авторизации (in‑memory token)
+│  │  │  └─ LoginForm.tsx
+│  │  └─ initiatives/
+│  │     ├─ api.ts               # вызовы /initiatives
+│  │     ├─ types.ts             # типы данных (из OpenAPI или ручные)
+│  │     └─ components/          # UI‑компоненты фичи
+│  ├─ shared/                     # переиспользуемые модули
+│  │  ├─ ui/                      # базовые UI: Button, Input, Card, Select, Tag
+│  │  ├─ lib/                     # fetch‑клиент, форматирование, helpers
+│  │  ├─ hooks/                   # общие хуки: useToast, useLocalStorage (если нужно)
+│  │  └─ styles/                  # глобальные стили и токены
+│  │     ├─ tokens.css            # дизайн‑токены (CSS переменные)
+│  │     ├─ base.css              # normalize + базовая типографика
+│  │     └─ theme.css             # темы (light по умолчанию)
+│  ├─ index.css
+│  └─ main.tsx
+├─ public/
+│  └─ index.html
+├─ package.json
+├─ tsconfig.json
+├─ vite.config.ts                 # сборка Vite (рекомend.)
+└─ Dockerfile
+```
+
+**Стек по умолчанию:** React + TypeScript + Vite, React Router, React Query (серверное состояние), CSS Variables (+ по желанию Tailwind или PostCSS). Минимум внешних зависимостей.
+
+---
+
+## 2) Архитектурные принципы
+
+- **Слои**: pages (маршруты) → features (локальная логика/компоненты) → shared (общие библиотеки/компоненты).  
+- **Server State**: **React Query** (загрузка, кэширование, повторные запросы, invalidation).  
+- **Client State**: локальный `useState`/`useReducer`; избегать глобальных стореджей.  
+- **API‑клиент**: thin‑wrapper над `fetch` с базовым URL из `VITE_API_BASE`, добавлением `Authorization: Bearer <token>` и обработкой ошибок (400/401/403/404/409/422/500).  
+- **Маршрутизация**: React Router v6, защищённые маршруты через guard с проверкой JWT.  
+- **Адаптивность**: mobile‑first (минимальная ширина 360–414 px), затем расширения.  
+- **Доступность (a11y)**: aria‑атрибуты, фокус‑кольца, контрастность текста ≥ 4.5:1 на светлом фоне.
+
+---
+
+## 3) Упрощённая дизайн‑система (mobile‑first)
+
+### 3.1 Дизайн‑токены (CSS Variables)
+
+`shared/styles/tokens.css`:
+```css
+:root,
+[data-theme="light"] {
+  /* Цвета */
+  --color-highlight: hsl(22, 94.80%, 55.10%);
+  --color-bg: #ffffff;
+  --color-bg-soft: #f7f7f9;
+  --color-text: #111827;
+  --color-text-muted: #6b7280;
+  --color-border: #e5e7eb;
+  --color-success: #16a34a;
+  --color-danger: #dc2626;
+  --shadow-color: 0deg 0% 0%;
+
+  /* Типографика */
+  --font-sans: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Noto Sans, Cantarell, Helvetica Neue, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+  --fs-xs: 12px;
+  --fs-sm: 14px;
+  --fs-md: 16px;
+  --fs-lg: 18px;
+  --fs-xl: 20px;
+  --fs-2xl: 24px;
+
+  /* Отступы (8‑pt scale + мелкий шаг) */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+
+  /* Радиусы и тени */
+  --radius: 12px;
+  --radius-lg: 16px;
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.06);
+  --shadow-md: 0 4px 10px rgba(0,0,0,0.08);
+  --shadow-lg: 0 10px 25px rgba(0,0,0,0.10);
+}
+```
+
+`shared/styles/base.css` (фрагмент):
+```css
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; }
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  font-size: var(--fs-md);
+}
+a { color: var(--color-highlight); text-decoration: none; }
+a:hover { text-decoration: underline; }
+```
+
+### 3.2 Базовые компоненты
+
+`shared/ui/Button.tsx` (схема):
+```tsx
+type ButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: "primary" | "ghost" | "danger" };
+export function Button({ variant = "primary", style, ...props }: ButtonProps) {
+  const styles: React.CSSProperties = {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    padding: "10px 14px",
+    borderRadius: "var(--radius)",
+    border: "1px solid transparent",
+    boxShadow: "var(--shadow-sm)",
+    fontWeight: 600,
+    ...(variant === "primary" && { background: "var(--color-highlight)", color: "white" }),
+    ...(variant === "ghost" && { background: "transparent", color: "var(--color-text)", borderColor: "var(--color-border)" }),
+    ...(variant === "danger" && { background: "var(--color-danger)", color: "white" }),
+    ...style
+  };
+  return <button style={styles} {...props} />;
+}
+```
+
+`shared/ui/Input.tsx` (схема):
+```tsx
+type InputProps = React.InputHTMLAttributes<HTMLInputElement>;
+export function Input(props: InputProps) {
+  return (
+    <input
+      {...props}
+      style={{
+        width: "100%",
+        padding: "12px",
+        borderRadius: "var(--radius)",
+        border: "1px solid var(--color-border)",
+        background: "white",
+        outlineColor: "var(--color-highlight)"
+      }}
+    />
+  );
+}
+```
+
+`shared/ui/Card.tsx` (схема):
+```tsx
+export function Card(props: React.HTMLAttributes<HTMLDivElement>) {
+  return (
+    <div
+      {...props}
+      style={{
+        background: "var(--color-bg)",
+        border: "1px solid var(--color-border)",
+        borderRadius: "var(--radius-lg)",
+        boxShadow: "var(--shadow-md)",
+        padding: "var(--space-4)"
+      }}
+    />
+  );
+}
+```
+
+**Компоненты ориентируем на палец:** интерактивные элементы ≥ 44×44 px, отступы не менее `var(--space-2)`.
+
+---
+
+## 4) Маршруты и страницы (минимум)
+
+- `/login` — форма входа.  
+- `/` — список сущностей (например, инициатив) с фильтром и сортировкой.  
+- `/item/:id` — просмотр/редактирование карточки.
+
+**Паттерн страницы**: контейнер 16–20 px боковых полей, sticky‑шапка, вертикальная колонка с gap 12–16 px. На планшете/десктопе — растягиваем контент до 720–960 px.
+
+---
+
+## 5) Работа с API и авторизацией
+
+- Базовый URL API: `import.meta.env.VITE_API_BASE` (из `.env`).  
+- Авторизация: `Authorization: Bearer <jwt>`. Токен храним **в памяти** (в сторе хука `useAuth`) и **дублируем в localStorage** по желанию для авто‑логина; при live‑demo этого достаточно.  
+- Ошибки 401 → редирект на `/login`.  
+- Формат ошибок в UI показываем дружелюбно, но без утечки технических деталей.
+
+Пример клиента `shared/lib/api.ts`:
+```ts
+export async function api<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(`${import.meta.env.VITE_API_BASE}${path}`, {
+    headers: { "Content-Type": "application/json", ...(init?.headers || {}) },
+    ...init,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw Object.assign(new Error(err.message || "Request error"), { status: res.status, details: err });
+  }
+  return res.json() as Promise<T>;
+}
+```
+
+---
+
+## 6) Состояния, загрузки и пустые экраны
+
+Для каждой страницы и крупного виджета поддерживаем состояния: **loading / empty / error / success**. Skeleton‑заглушки допустимы. На мобильных — избегаем «прыжков» контента.
+
+---
+
+## 7) Качество кода и стиль
+
+- TypeScript строго: `strict: true`.  
+- ESLint + Prettier (минимальные правила).  
+- Именование файлов по назначению (`LoginForm.tsx`, `api.ts`, `types.ts`).  
+- Избегать «умных» HOC; преимущество за функц. компонентами и хуками.  
+- Сторонние UI‑библиотеки — минимально, упор на собственные простые компоненты.
+
+---
+
+## 8) Оптимизированный Docker‑образ фронтенда
+
+**Цель:** собрать статику и отдавать её простым надёжным сервером. Рекомендуем Caddy (совместимо с общей стратегией деплоя).
+
+`app/frontend/Dockerfile`:
+```dockerfile
+# syntax=docker/dockerfile:1
+
+FROM node:20-alpine AS build
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+COPY . .
+RUN npm run build   # Vite build → dist/
+
+# Простая и надёжная раздача статических файлов
+FROM caddy:2-alpine
+COPY --from=build /app/dist /usr/share/caddy
+# (Маршрутизацию /api/* ведёт внешний caddy-прокси из docker-compose)
+EXPOSE 3000
+```
+
+> В `docker-compose.yml` внешний `caddy` проксирует `/api/*` на backend, остальное — на frontend.
+
+---
+
+## 9) Критерии готовности фронтенда (для AI‑проверки по репо)
+
+- В проекте присутствуют `tokens.css`, `base.css` и используется `--color-highlight: hsl(22, 94.80%, 55.10%)`.  
+- Есть базовые UI‑компоненты (`Button`, `Input`, `Card`), соответствующие токенам.  
+- Реализованы маршруты `/login`, `/`, `/item/:id`; навигация работает.  
+- API‑клиент читает `VITE_API_BASE`, добавляет `Authorization` при наличии токена, корректно обрабатывает 401/4xx/5xx.  
+- UI поддерживает состояния loading/empty/error/success.  
+- Docker‑сборка создаёт статику и запускается на caddy‑образе.
+
+---
+
+## 10) Примечания по Mermaid (если используете диаграммы в README)
+
+- В подписях и сообщениях **не** использовать слэши `/ \` и круглые скобки `(` `)`.  
+- Перенос строки — обычным переводом строки.  
+- Для блок‑схем: `flowchart TD` (сверху‑вниз).
+
+## 11) Управление зависимостями и артефакты сборки
+
+- **package-lock.json обязательно коммитить** — фиксирует точные версии зависимостей для `npm ci`
+- **Исключать из VCS**: `node_modules/`, `dist/`, `build/`, кэш-директории (`.vite/`, `.cache/`, `.parcel-cache/`)
+- **Логи и временные файлы**: `npm-debug.log*`, `yarn-debug.log*` добавлять в .gitignore

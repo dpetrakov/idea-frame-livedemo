@@ -1,0 +1,280 @@
+version: 1
+sources:
+  prd: docs/prd.md
+  architecture: docs/architecture.md
+  deployment: docs/deployment.md
+  dbml: db/schema.dbml
+  openapi: docs/openapi.yaml
+
+tasks:
+  - id: TK-001
+    title: Пользователи и аутентификация (JWT 24h)
+    order: 10
+    status: done
+    frRefs: [FR7]
+    context:
+      prd: docs/prd.md#fr7-регистрация-и-вход-аутентификация-jwt-24-часа
+      architecture: docs/architecture.md#регистрация-и-вход
+      dbml: db/schema.dbml#users
+      openapi: docs/openapi.yaml#/paths/~1v1~1auth~1login
+      deployment: docs/deployment.md#2-переменные-окружения-env
+    acceptanceCriteria:
+      - text: "В OpenAPI описаны /v1/auth/register, /v1/auth/login, /v1/users/me; security: bearer JWT 24h"
+        done: true
+      - text: "В DBML есть таблица users с полями id, login (unique), display_name, password_hash, created_at, updated_at"
+        done: true
+      - text: "Бэкенд реализует регистрацию, логин, /v1/users/me; пароли хешируются (bcrypt)"
+        done: true
+      - text: "Эндпоинт /v1/health возвращает 200 OK (security: [])"
+        done: true
+      - text: "Фронтенд реализует форму логина/регистрации, хранение JWT, protected роуты, API клиент с Authorization заголовком"
+        done: true
+      - text: "Инфраструктура Docker Compose настроена: postgres, backend, frontend, caddy; .env.example создан"
+        done: true
+    subtasks:
+      - id: TK-001/AN
+        role: AN
+        title: Детальная спецификация по аутентификации
+        status: done
+        outputs:
+          - specs/TK-001.md
+      - id: TK-001/BE
+        role: BE
+        title: Реализация backend аутентификации и health
+        status: done
+      - id: TK-001/FE
+        role: FE
+        title: Экран логин/регистрация и хранение JWT
+        status: done
+      - id: TK-001/DV
+        role: DV
+        title: Переменные окружения JWT_SECRET и проверка health через прокси
+        status: done
+
+  - id: TK-002
+    title: Инициативы — создание и просмотр (markdown)
+    order: 20
+    status: spec-prepared
+    frRefs: [FR1]
+    context:
+      prd: docs/prd.md#fr1-создание-инициативы-с-markdown-описанием
+      architecture: docs/architecture.md#создание-инициативы
+      dbml: db/schema.dbml#initiatives
+      openapi: docs/openapi.yaml#/paths/~1v1~1initiatives
+    acceptanceCriteria:
+      - text: "В OpenAPI описаны POST /v1/initiatives и GET /v1/initiatives/{id}; схемы Initiative/InitiativeCreate заполнены"
+        done: true
+      - text: "В DBML таблица initiatives содержит поля title(1..140), description_md(1..10000), author_id, created_at"
+        done: true
+      - text: "Бэкенд валидирует длины и создает запись; GET by id возвращает данные по схеме"
+        done: false
+      - text: "Фронтенд реализует форму создания и страницу деталей; markdown рендерится через библиотеку"
+        done: false
+    subtasks:
+      - id: TK-002/AN
+        role: AN
+        title: Спецификация сценария создания и просмотра инициативы
+        status: done
+        outputs:
+          - specs/TK-002.md
+      - id: TK-002/BE
+        role: BE
+        title: Хэндлеры POST /initiatives и GET /initiatives/{id} + миграции
+        status: planned
+      - id: TK-002/FE
+        role: FE
+        title: UI формы создания и страницы деталей с markdown
+        status: planned
+      - id: TK-002/DV
+        role: DV
+        title: Обновление запуска миграций при старте сервиса (при необходимости)
+        status: planned
+
+  - id: TK-003
+    title: Комментарии к инициативе (лонг поллинг)
+    order: 30
+    status: spec-prepared
+    frRefs: [FR2]
+    context:
+      prd: docs/prd.md#fr2-комментарии-в-формате-чата
+      architecture: docs/architecture.md#комментарии-с-лонг-поллинг
+      dbml: db/schema.dbml#comments
+      openapi: docs/openapi.yaml#/paths/~1v1~1initiatives~1{id}~1comments
+    acceptanceCriteria:
+      - text: "В OpenAPI описаны GET/POST /v1/initiatives/{id}/comments; параметр since (RFC3339) поддерживается"
+        done: true
+      - text: "В DBML таблица comments содержит поля initiative_id, author_id, body(1..2000), created_at"
+        done: true
+      - text: "Бэкенд реализует добавление и выборку комментариев по возрастанию времени, фильтр since"
+        done: false
+      - text: "Фронтенд реализует ленту чата с автопрокруткой и обработкой ошибок"
+        done: false
+    subtasks:
+      - id: TK-003/AN
+        role: AN
+        title: Спецификация UX чата и протокола long poll
+        status: done
+        outputs:
+          - specs/TK-003.md
+      - id: TK-003/BE
+        role: BE
+        title: Реализация API комментариев и оптимизации запросов
+        status: planned
+      - id: TK-003/FE
+        role: FE
+        title: UI чата с long poll и ретраями
+        status: planned
+      - id: TK-003/DV
+        role: DV
+        title: Тюнинг лимитов и логов для чата (по необходимости)
+        status: planned
+
+  - id: TK-004
+    title: Атрибуты 1–5 и расчёт веса инициативы
+    order: 40
+    status: spec-prepared
+    frRefs: [FR3, FR4]
+    context:
+      prd: docs/prd.md#fr3-атрибуты-инициативы-ценность-скорость-стоимость-1–5
+      architecture: docs/architecture.md#обновление-атрибутов-и-пересчет-веса
+      dbml: db/schema.dbml#initiatives
+      openapi: docs/openapi.yaml#/paths/~1v1~1initiatives~1{id}~1attributes
+    acceptanceCriteria:
+      - text: "В OpenAPI описан PATCH /v1/initiatives/{id}/attributes с ограничениями 1..5 и minProperties:1"
+        done: true
+      - text: "В DB миграциях добавлены CHECK‑ограничения 1..5; поле weight numeric(3,1)"
+        done: false
+      - text: "Бэкенд вычисляет weight = round((value×velocity)/cost, 1), при неполном наборе атрибутов weight=null"
+        done: false
+      - text: "Фронтенд показывает контролы 1..5 и отображает вес с одним знаком"
+        done: false
+    subtasks:
+      - id: TK-004/AN
+        role: AN
+        title: Спецификация правил атрибутов и формулы веса
+        status: done
+        outputs:
+          - specs/TK-004.md
+      - id: TK-004/BE
+        role: BE
+        title: Реализация PATCH /attributes и логики пересчёта веса
+        status: planned
+      - id: TK-004/FE
+        role: FE
+        title: UI атрибутов и мгновенного обновления списка
+        status: planned
+      - id: TK-004/DV
+        role: DV
+        title: Контроль метрик/логов ошибок в атрибутах (по необходимости)
+        status: planned
+
+  - id: TK-005
+    title: Назначение ответственного
+    order: 50
+    status: spec-prepared
+    frRefs: [FR5]
+    context:
+      prd: docs/prd.md#fr5-назначение-ответственного
+      architecture: docs/architecture.md#данные-и-модель
+      dbml: db/schema.dbml#initiatives
+      openapi: docs/openapi.yaml#/paths/~1v1~1initiatives~1{id}~1assignee
+    acceptanceCriteria:
+      - text: "В OpenAPI описан PATCH /v1/initiatives/{id}/assignee (nullable UUID)"
+        done: true
+      - text: "Добавлен GET /v1/users для выбора ответственного (id, login, displayName)"
+        done: false
+      - text: "Поле assignee_id в initiatives ссылается на users; миграции обновлены"
+        done: false
+      - text: "Фронтенд реализует выбор ответственного из списка пользователей"
+        done: false
+    subtasks:
+      - id: TK-005/AN
+        role: AN
+        title: Спецификация UX выбора ответственного и контракта списка пользователей
+        status: done
+        outputs:
+          - specs/TK-005.md
+      - id: TK-005/BE
+        role: BE
+        title: Реализация PATCH /assignee и GET /users
+        status: planned
+      - id: TK-005/FE
+        role: FE
+        title: UI выбора ответственного на карточке и в деталях
+        status: planned
+      - id: TK-005/DV
+        role: DV
+        title: Пороговые лимиты и пагинация на /users (по необходимости)
+        status: planned
+
+  - id: TK-006
+    title: Список инициатив — фильтры и сортировка
+    order: 60
+    status: spec-prepared
+    frRefs: [FR6]
+    context:
+      prd: docs/prd.md#fr6-список-инициатив-фильтры-и-сортировка
+      architecture: docs/architecture.md#список-инициатив-фильтры-и-сортировка
+      dbml: db/schema.dbml#initiatives
+      openapi: docs/openapi.yaml#/paths/~1v1~1initiatives
+    acceptanceCriteria:
+      - text: "GET /v1/initiatives поддерживает filter=all|authored|assigned, limit, offset"
+        done: true
+      - text: "Сортировка в БД: ORDER BY weight DESC NULLS LAST, created_at DESC; индексы существуют"
+        done: true
+      - text: "Фронтенд реализует табы фильтров; элементы без веса — внизу"
+        done: false
+      - text: "Мобильная раскладка отображает карточки без горизонтального скролла"
+        done: false
+    subtasks:
+      - id: TK-006/AN
+        role: AN
+        title: Спецификация фильтров и сортировки
+        status: done
+        outputs:
+          - specs/TK-006.md
+      - id: TK-006/BE
+        role: BE
+        title: Реализация фильтров и сортировки на API
+        status: planned
+      - id: TK-006/FE
+        role: FE
+        title: UI списка с табами фильтров и пагинацией
+        status: planned
+      - id: TK-006/DV
+        role: DV
+        title: Наблюдаемость запросов списка (latency, ошибки)
+        status: planned
+
+  - id: TK-007
+    title: Инфраструктура docker-compose + Caddy + .env
+    order: 70
+    status: spec-prepared
+    frRefs: []
+    context:
+      prd: docs/prd.md#7-нефункциональные-требования-простота-и-надёжность
+      architecture: docs/architecture.md#наблюдаемость
+      deployment: docs/deployment.md
+      openapi: docs/openapi.yaml#/paths/~1v1~1health
+    acceptanceCriteria:
+      - text: "Существуют infra/docker-compose.yml и infra/caddy/Caddyfile; прокси /api/* → backend, остальное → frontend"
+        done: false
+      - text: ".env.example добавлен; BACKEND_PORT, FRONTEND_PORT, DATABASE_URL, JWT_SECRET описаны"
+        done: false
+      - text: "Образы собираются на лету; backend запускает миграции при старте через entrypoint"
+        done: false
+      - text: "Smoketest проходит: / и /api/health возвращают 200"
+        done: false
+    subtasks:
+      - id: TK-007/AN
+        role: AN
+        title: Спецификация окружений и переменных (.env)
+        status: done
+        outputs:
+          - specs/TK-007.md
+      - id: TK-007/DV
+        role: DV
+        title: Подготовка compose и Caddy, проверка smoketest
+        status: planned
+
+

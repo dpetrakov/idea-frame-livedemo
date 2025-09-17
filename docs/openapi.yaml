@@ -1,0 +1,548 @@
+openapi: 3.0.3
+info:
+  title: IdeaFrame API
+  version: 1.0.0
+  description: |
+    API для системы фрейминга портфеля инициатив (MVP).
+    - Аутентификация: JWT (Bearer), срок 24 часа.
+    - Основные сущности: users, initiatives, comments.
+    - Сортировка списка инициатив: по weight убыв., затем createdAt убыв., элементы без weight — в конце.
+servers:
+  - url: https://ideaframe.dimlight.online/api
+    description: Production
+  - url: http://localhost:8080/api
+    description: Local development
+tags:
+  - name: Auth
+  - name: Health
+  - name: Users
+  - name: Initiatives
+  - name: Comments
+security:
+  - bearerAuth: []
+paths:
+  /v1/health:
+    get:
+      tags: [Health]
+      summary: Health check
+      operationId: getHealth
+      security: []
+      responses:
+        200:
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: #/components/schemas/Health
+  /v1/auth/register:
+    post:
+      tags: [Auth]
+      summary: Регистрация пользователя
+      operationId: postAuthRegister
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: #/components/schemas/RegisterRequest
+      responses:
+        201:
+          description: Зарегистрирован и аутентифицирован
+          content:
+            application/json:
+              schema:
+                $ref: #/components/schemas/AuthResponse
+        400: { $ref: #/components/responses/BadRequest }
+        409: { $ref: #/components/responses/Conflict }
+        422: { $ref: #/components/responses/UnprocessableEntity }
+        500: { $ref: #/components/responses/InternalServerError }
+  /v1/auth/login:
+    post:
+      tags: [Auth]
+      summary: Вход по логину и паролю
+      operationId: postAuthLogin
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: #/components/schemas/LoginRequest
+      responses:
+        200:
+          description: Успешная аутентификация
+          content:
+            application/json:
+              schema:
+                $ref: #/components/schemas/AuthResponse
+        401: { $ref: #/components/responses/Unauthorized }
+        422: { $ref: #/components/responses/UnprocessableEntity }
+        500: { $ref: #/components/responses/InternalServerError }
+  /v1/users/me:
+    get:
+      tags: [Users]
+      summary: Текущий пользователь
+      operationId: getUsersMe
+      responses:
+        200:
+          description: Данные текущего пользователя
+          content:
+            application/json:
+              schema:
+                $ref: #/components/schemas/User
+        401: { $ref: #/components/responses/Unauthorized }
+        500: { $ref: #/components/responses/InternalServerError }
+  /v1/initiatives:
+    get:
+      tags: [Initiatives]
+      summary: Список инициатив (сортировка по weight desc, затем createdAt desc)
+      operationId: getInitiatives
+      parameters:
+        - name: filter
+          in: query
+          description: Фильтр по принадлежности
+          required: false
+          schema:
+            type: string
+            enum: [all, authored, assigned]
+            default: all
+        - name: limit
+          in: query
+          required: false
+          description: Кол-во элементов на странице (1-100)
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: offset
+          in: query
+          required: false
+          description: Смещение от начала списка
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        200:
+          description: Страница инициатив
+          content:
+            application/json:
+              schema:
+                $ref: #/components/schemas/InitiativePage
+        401: { $ref: #/components/responses/Unauthorized }
+        500: { $ref: #/components/responses/InternalServerError }
+    post:
+      tags: [Initiatives]
+      summary: Создать инициативу
+      operationId: postInitiatives
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: #/components/schemas/InitiativeCreate
+      responses:
+        201:
+          description: Создано
+          content:
+            application/json:
+              schema:
+                $ref: #/components/schemas/Initiative
+        400: { $ref: #/components/responses/BadRequest }
+        401: { $ref: #/components/responses/Unauthorized }
+        422: { $ref: #/components/responses/UnprocessableEntity }
+        500: { $ref: #/components/responses/InternalServerError }
+  /v1/initiatives/{id}:
+    get:
+      tags: [Initiatives]
+      summary: Получить инициативу по id
+      operationId: getInitiativeById
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        200:
+          description: Инициатива
+          content:
+            application/json:
+              schema:
+                $ref: #/components/schemas/Initiative
+        401: { $ref: #/components/responses/Unauthorized }
+        404: { $ref: #/components/responses/NotFound }
+        500: { $ref: #/components/responses/InternalServerError }
+  /v1/initiatives/{id}/attributes:
+    patch:
+      tags: [Initiatives]
+      summary: Обновить атрибуты инициативы (value, velocity, cost) и пересчитать weight
+      operationId: patchInitiativeAttributes
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: #/components/schemas/InitiativeAttributesUpdate
+      responses:
+        200:
+          description: Обновлено
+          content:
+            application/json:
+              schema:
+                $ref: #/components/schemas/Initiative
+        400: { $ref: #/components/responses/BadRequest }
+        401: { $ref: #/components/responses/Unauthorized }
+        404: { $ref: #/components/responses/NotFound }
+        422: { $ref: #/components/responses/UnprocessableEntity }
+        500: { $ref: #/components/responses/InternalServerError }
+  /v1/initiatives/{id}/assignee:
+    patch:
+      tags: [Initiatives]
+      summary: Назначить или изменить ответственного (assigneeId)
+      operationId: patchInitiativeAssignee
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: #/components/schemas/InitiativeAssigneeUpdate
+      responses:
+        200:
+          description: Обновлено
+          content:
+            application/json:
+              schema:
+                $ref: #/components/schemas/Initiative
+        400: { $ref: #/components/responses/BadRequest }
+        401: { $ref: #/components/responses/Unauthorized }
+        404: { $ref: #/components/responses/NotFound }
+        422: { $ref: #/components/responses/UnprocessableEntity }
+        500: { $ref: #/components/responses/InternalServerError }
+  /v1/initiatives/{id}/comments:
+    get:
+      tags: [Comments]
+      summary: Список комментариев для инициативы (по возрастанию времени)
+      operationId: getInitiativeComments
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: since
+          in: query
+          required: false
+          description: Вернуть комментарии новее указанного времени (RFC3339)
+          schema: { type: string, format: date-time }
+        - name: limit
+          in: query
+          required: false
+          description: Максимум комментариев (1-200)
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+      responses:
+        200:
+          description: Список комментариев
+          content:
+            application/json:
+              schema:
+                $ref: #/components/schemas/CommentList
+        401: { $ref: #/components/responses/Unauthorized }
+        404: { $ref: #/components/responses/NotFound }
+        500: { $ref: #/components/responses/InternalServerError }
+    post:
+      tags: [Comments]
+      summary: Добавить комментарий к инициативе
+      operationId: postInitiativeComments
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: #/components/schemas/CommentCreate
+      responses:
+        201:
+          description: Создано
+          content:
+            application/json:
+              schema:
+                $ref: #/components/schemas/Comment
+        400: { $ref: #/components/responses/BadRequest }
+        401: { $ref: #/components/responses/Unauthorized }
+        404: { $ref: #/components/responses/NotFound }
+        422: { $ref: #/components/responses/UnprocessableEntity }
+        500: { $ref: #/components/responses/InternalServerError }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    Health:
+      type: object
+      properties:
+        status:
+          type: string
+          example: ok
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          example: VALIDATION_ERROR
+        message:
+          type: string
+          example: Title is required
+        details:
+          type: object
+          additionalProperties: true
+        correlationId:
+          type: string
+          format: uuid
+    User:
+      type: object
+      required: [id, login, displayName, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        login:
+          type: string
+          maxLength: 64
+          example: ivan
+        displayName:
+          type: string
+          maxLength: 140
+          example: Иван Петров
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    RegisterRequest:
+      type: object
+      required: [login, displayName, password, passwordConfirm]
+      properties:
+        login:
+          type: string
+          maxLength: 64
+          example: ivan
+        displayName:
+          type: string
+          maxLength: 140
+          example: Иван Петров
+        password:
+          type: string
+          minLength: 8
+          example: StrongP@ssw0rd
+        passwordConfirm:
+          type: string
+          minLength: 8
+          example: StrongP@ssw0rd
+    LoginRequest:
+      type: object
+      required: [login, password]
+      properties:
+        login:
+          type: string
+          example: ivan
+        password:
+          type: string
+          example: StrongP@ssw0rd
+    AuthResponse:
+      type: object
+      required: [token, user]
+      properties:
+        token:
+          type: string
+          description: JWT Bearer token (TTL 24h)
+        user:
+          $ref: #/components/schemas/User
+    InitiativeCreate:
+      type: object
+      required: [title, descriptionMd]
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 140
+          example: Автоматизировать отчётность
+        descriptionMd:
+          type: string
+          minLength: 1
+          maxLength: 10000
+          example: |
+            # Инициатива
+            Описание в markdown.
+    InitiativeAttributesUpdate:
+      type: object
+      description: Любое подмножество полей, минимум одно
+      minProperties: 1
+      properties:
+        value:
+          type: integer
+          minimum: 1
+          maximum: 5
+          example: 5
+        velocity:
+          type: integer
+          minimum: 1
+          maximum: 5
+          example: 3
+        cost:
+          type: integer
+          minimum: 1
+          maximum: 5
+          example: 2
+    InitiativeAssigneeUpdate:
+      type: object
+      required: [assigneeId]
+      properties:
+        assigneeId:
+          type: string
+          format: uuid
+          nullable: true
+          description: UUID пользователя или null для снятия назначения
+    Initiative:
+      type: object
+      required:
+        [id, title, descriptionMd, authorId, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        title:
+          type: string
+          example: Автоматизировать отчётность
+        descriptionMd:
+          type: string
+          example: |
+            # Инициатива
+            Описание в markdown.
+        authorId: { type: string, format: uuid }
+        assigneeId:
+          type: string
+          format: uuid
+          nullable: true
+        value:
+          type: integer
+          minimum: 1
+          maximum: 5
+          nullable: true
+          example: 5
+        velocity:
+          type: integer
+          minimum: 1
+          maximum: 5
+          nullable: true
+          example: 3
+        cost:
+          type: integer
+          minimum: 1
+          maximum: 5
+          nullable: true
+          example: 2
+        weight:
+          type: number
+          format: float
+          nullable: true
+          description: round((value×velocity)/cost, 1)
+          example: 7.5
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    InitiativePage:
+      type: object
+      required: [items, total, limit, offset]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: #/components/schemas/Initiative
+        total:
+          type: integer
+          format: int32
+          example: 57
+        limit:
+          type: integer
+          example: 20
+        offset:
+          type: integer
+          example: 0
+    CommentCreate:
+      type: object
+      required: [body]
+      properties:
+        body:
+          type: string
+          minLength: 1
+          maxLength: 2000
+          example: Предлагаю начать с MVP
+    Comment:
+      type: object
+      required: [id, initiativeId, authorId, body, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        initiativeId: { type: string, format: uuid }
+        authorId: { type: string, format: uuid }
+        body:
+          type: string
+          example: Предлагаю начать с MVP
+        createdAt: { type: string, format: date-time }
+    CommentList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: #/components/schemas/Comment
+  responses:
+    BadRequest:
+      description: Неверный запрос
+      content:
+        application/json:
+          schema: { $ref: #/components/schemas/Error }
+    Unauthorized:
+      description: Неавторизован
+      content:
+        application/json:
+          schema: { $ref: #/components/schemas/Error }
+    Forbidden:
+      description: Доступ запрещён
+      content:
+        application/json:
+          schema: { $ref: #/components/schemas/Error }
+    NotFound:
+      description: Не найдено
+      content:
+        application/json:
+          schema: { $ref: #/components/schemas/Error }
+    Conflict:
+      description: Конфликт/дубликат
+      content:
+        application/json:
+          schema: { $ref: #/components/schemas/Error }
+    UnprocessableEntity:
+      description: Ошибка валидации
+      content:
+        application/json:
+          schema: { $ref: #/components/schemas/Error }
+    InternalServerError:
+      description: Внутренняя ошибка сервера
+      content:
+        application/json:
+          schema: { $ref: #/components/schemas/Error }

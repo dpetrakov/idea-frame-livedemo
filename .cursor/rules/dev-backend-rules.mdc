@@ -1,0 +1,269 @@
+---
+description: Использовать это правило для разработки серверного сервиса на **Go**
+alwaysApply: false
+---
+# Rules: Backend Development (Go) — structure, architecture, docker
+
+> **Description**  
+> Использовать это правило для разработки серверного сервиса на **Go**: структура каталогов и файлов, архитектурные слои, подход к реализации, конфигурация, ошибки, а также подготовка **оптимизированного Docker‑образа**.  
+> Юнит‑тесты в рамках live‑demo **не требуются**, но все остальные практики качества соблюдаем.
+
+> **Filename & Location**  
+> Исходный код бэкенда: `app/backend/` (см. структуру ниже).
+
+> **Dependencies**  
+> Сервис реализуется **по контракту** из `docs/openapi.yaml` и на основе `docs/prd.md`, `docs/architecture.md`, `db/schema.dbml`, `docs/deployment.md`.
+
+---
+
+## 1) Целевая структура каталога `app/backend/`
+
+```
+app/backend/
+├─ cmd/
+│  └─ server/
+│     └─ main.go            # входная точка (настройка, DI, запуск HTTP)
+├─ internal/                # приватные пакеты (предпочтительнее pkg/)
+│  ├─ config/               # конфигурация из env (.env через compose)
+│  │  └─ config.go
+│  ├─ http/                 # транспортный слой (маршруты, middleware)
+│  │  ├─ router.go
+│  │  ├─ middleware.go
+│  │  └─ handlers/          # обработчики по фичам
+│  │     ├─ auth.go
+│  │     └─ initiatives.go
+│  ├─ service/              # бизнес‑логика (use‑cases, без HTTP/SQL)
+│  │  ├─ auth.go
+│  │  └─ initiative.go
+│  ├─ repo/                 # доступ к БД (pgx), транзакции, маппинг ошибок
+│  │  ├─ pg.go              # создание пула соединений, миграции не здесь
+│  │  └─ initiative_repo.go
+│  ├─ domain/               # доменные сущности (DTO/модели)
+│  │  ├─ user.go
+│  │  └─ initiative.go
+│  ├─ security/             # JWT, пароли, контекст пользователя
+│  │  ├─ jwt.go
+│  │  └─ password.go
+│  ├─ telemetry/            # логирование, request‑id, метрики (при необходимости)
+│  │  └─ logging.go
+│  └─ util/                 # мелкие утилиты (время, валидация)
+│     └─ time.go
+├─ Dockerfile               # multi‑stage, минимальный рантайм (distroless/Alpine)
+├─ go.mod
+└─ go.sum
+```
+
+**Принципы:**  
+- Слои: **HTTP (transport)** → **Service (use‑cases)** → **Repo (storage)**.  
+- Внутри `service` **нет** знаний о HTTP/SQL — только доменная логика.  
+- Внутри `repo` **нет** знаний о HTTP — только SQL/транзакции.  
+- Обработчики принимают/возвращают структуры, соответствующие OpenAPI (DTO).
+
+---
+
+## 2) Загрузка конфигурации и запуск
+
+- Конфигурация **только из env** (compose прокидывает `.env`). Минимум:
+  - `PORT` (напр. `8080`), `DATABASE_URL`, `JWT_SECRET`, `ENV` (`dev`/`prod`).
+- `main.go` реализует:
+  - инициализацию логгера (`log/slog`, формат JSON);
+  - загрузку конфигурации;
+  - подключение к Postgres (pgxpool);
+  - сборку роутера (chi) и middleware;
+  - запуск HTTP‑сервера с **graceful shutdown** (SIGTERM, таймаут 15–30с);
+  - эндпоинты liveness/readiness указываются по `docs/architecture.md` и `docs/openapi.yaml` (пути не хардкодятся в правиле).
+
+---
+
+## 3) HTTP‑стек и middleware
+
+- Роутер: **chi** (`github.com/go-chi/chi/v5`) — простой и надёжный.  
+- Базовые middleware:
+  - **RequestID** (генерируем `X-Request-ID`, добавляем в контекст и логи);
+  - **Recoverer** (паники → 500 JSON);
+  - **Logger** (структурный лог запросов/ответов, не логировать секреты);
+  - **Timeout** (контекст запроса: 5–15 секунд по умолчанию);
+  - **CORS** (минимально необходимый, если фронт отдельно).
+- Аутентификация: Bearer JWT, middleware проверяет подпись и exp, кладёт `userID` в контекст. **Срок действия** — 24 часа.
+
+---
+
+## 4) Работа с БД (PostgreSQL, `pgx/v5`)
+
+- Подключение: пул через `pgxpool`. Таймауты контекста обязателены.  
+- Миграции: выполняются **до** старта сервера (см. правило деплоя).  
+- Репозитории:
+  - Явные методы CRUD и выборки под сценарии (без «магии»).
+  - Транзакции через явный `BeginTx` в сервисном слое.
+  - Ошибки маппятся на доменные (`ErrNotFound`, `ErrConflict`).
+- Индексы/ограничения должны соответствовать `db/schema.dbml`. Нарушения правил в БД конвертируются в 409/422.
+
+---
+
+## 5) Контракты API и модели
+
+- Вход/выход обработчиков соответствуют `docs/openapi.yaml`.  
+- **Рекомендация**: при возможности использовать `oapi-codegen` (chi middleware) для валидации по OpenAPI 3.0.3. Если времени мало — **строго следовать спецификации вручную**.  
+- Формат ошибок единый:
+  ```json
+  { "code": "VALIDATION_ERROR", "message": "..." }
+  ```
+- JSON‑поля — **camelCase**; в БД — **snake_case** (трансформация в маппере).
+
+---
+
+## 6) Обработка ошибок и коды статусов
+
+- 400 — валидация входа (схема/поля); 401 — неавторизован; 403 — нет прав;  
+- 404 — не найдено; 409 — конфликт (уникальность/состояние); 422 — доменная валидация;  
+- 500 — непредвиденная ошибка. Всегда JSON‑ответ и `X-Request-ID` в заголовке.
+
+---
+
+## 7) Безопасность (базово для демо)
+
+- JWT **HS256**; ключ в `JWT_SECRET`. exp = **24h**.  
+- Хеш паролей — **bcrypt** (`golang.org/x/crypto/bcrypt`).  
+- Не логировать персональные данные и секреты.  
+- Включить ограничение размера тела запроса (например, 1–2 МБ для JSON).
+
+---
+
+## 8) Производительность и надёжность
+
+- Контекст‑таймауты на все внешние операции (БД/HTTP).  
+- Пул соединений БД: ограничить коннекты (например, `MAX_CONNS=10–20`).  
+- Грейсфул‑шатдаун: завершать активные запросы, закрывать пул.  
+- Сериализация JSON — стандартным `encoding/json`; без рефлексии/магии.
+
+---
+
+## 9) Руководство по коду (style)
+
+- Пакеты **малые и целенаправленные**; экспорт только необходимого.  
+- Имя пакета — по назначению (`service`, `repo`, `domain`, `http`).  
+- Структуры запросов/ответов в отдельных файлах `dto_*.go` (по фичам).  
+- Конструкторы `NewXxx(...)` для сервисов/репозиториев; зависимости — через параметры (простая DI).  
+- **Не смешивать** логгер/конфиг с доменной логикой.
+
+---
+
+## 10) Мини‑скелет `main.go` (для ориентира)
+
+```go
+func main() {
+  ctx := context.Background()
+
+  // config & logger
+  cfg := config.Load()
+  log := telemetry.NewLogger(cfg)
+
+  // db
+  pool := repo.MustConnect(ctx, cfg.DatabaseURL)
+  defer pool.Close()
+
+  // services & handlers
+  authSvc := service.NewAuth(pool, cfg.JWTSecret)
+  initSvc := service.NewInitiatives(pool)
+  r := http.NewRouter(cfg, log, authSvc, initSvc)
+
+  srv := &http.Server{
+    Addr:              ":" + cfg.Port,
+    Handler:           r,
+    ReadHeaderTimeout: 5 * time.Second,
+  }
+
+  go func() {
+    log.Info("server starting", "port", cfg.Port)
+    if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+      log.Error("server error", "err", err)
+    }
+  }()
+
+  // graceful shutdown
+  stop := make(chan os.Signal, 1)
+  signal.Notify(stop, syscall.SIGTERM, syscall.SIGINT)
+  <-stop
+  ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+  defer cancel()
+  _ = srv.Shutdown(ctx)
+}
+```
+
+---
+
+## 11) Оптимизированный Docker‑образ (multi‑stage)
+
+**Цель:** быстрый билд, маленький размер, безопасный рантайм (non‑root).  
+**Требование:** образ должен запускаться командой из compose без доп. скриптов.
+
+```dockerfile
+# syntax=docker/dockerfile:1
+
+# --- build stage ---
+FROM golang:1.22-alpine AS build
+WORKDIR /src
+RUN apk add --no-cache git ca-certificates upx
+
+# Кешируем зависимости
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Копируем код
+COPY . .
+
+# Сборка статического бинарника
+ENV CGO_ENABLED=0 GOOS=linux
+RUN go build -ldflags="-s -w" -o /out/app ./cmd/server && upx /out/app || true
+
+# --- runtime stage ---
+# Вариант А (минимум): distroless static nonroot
+# FROM gcr.io/distroless/static:nonroot
+
+# Вариант Б (чуть тяжелее, но привычнее): alpine
+FROM alpine:3.20
+RUN adduser -D -H -u 10001 appuser && apk add --no-cache ca-certificates
+USER appuser
+WORKDIR /app
+COPY --from=build /out/app /app/app
+EXPOSE 8080
+ENTRYPOINT ["/app/app"]
+```
+
+**Правила:**  
+- Сборка с `CGO_ENABLED=0`, `-ldflags="-s -w"`; допустим `upx` (опционально).  
+- Рантайм от non‑root пользователя. Никаких секретов в образе — только через env.  
+- Healthcheck выносится в compose. Логи — в stdout.
+
+---
+
+## 12) Интеграция с docker‑compose
+
+- `backend` **зависит** от БД и (если используется) job‑миграций.  
+- `command` в compose не переопределяет ENTRYPOINT, если это не нужно.  
+- Переменные окружения — только через `.env`.  
+- Пробрасываем порт как `expose` (за прокси отвечает Caddy).
+
+---
+
+## 13) Критерии готовности кода (для AI‑проверки по репо)
+
+- Обработчики соответствуют путям/методам из `docs/openapi.yaml`.  
+- JWT выдаётся и валидируется; экспирация 24ч.  
+- БД‑схема и индексы соответствуют `db/schema.dbml`.  
+- Health‑эндпоинты отвечают 200; логгер пишет JSON с `request_id`.  
+- Docker‑образ собирается, контейнер стартует в compose.
+
+---
+
+## 14) Заметки по Mermaid (если добавляете диаграммы в код/README)
+
+- Не использовать в узлах символы слэшей `/ \` и круглые скобки `(` `)`.  
+- Перенос строки — обычный перенос.  
+- Для блок‑схем: `flowchart TD` (сверху‑вниз).
+
+## 15) Управление зависимостями и артефактами сборки
+
+- **go.sum обязательно коммитить** — обеспечивает воспроизводимость сборки
+- **Исключать из VCS**: `bin/`, `dist/`, `vendor/` (если используется), бинарные файлы (`.exe`, `.dll`, `.so`, `.dylib`)
+- **Кэш и временные файлы**: `coverage.out`, `*_test.go.tmp` добавлять в .gitignore

@@ -1,0 +1,179 @@
+---
+description: Использовать это правило, когда требуется подготовить **стратегию развертывания** и/или сгенерировать инфраструктурные файлы для проекта.
+alwaysApply: false
+---
+
+# Rules: Deployment (Docker Compose + Caddy) 
+
+> **Description**  
+> Использовать это правило, когда требуется подготовить **стратегию развертывания** и/или сгенерировать инфраструктурные файлы для проекта.
+
+> **Filename & Location**  
+> Стратегию развертывания окружения сохранять в `docs/deployment.md` (перезаписывать целиком).
+
+> **Required Input (обязательно)**  
+> При генерации стратегии развертывания **обязательно** получить **целевой URL** (домен) публикации.  
+> Если URL не предоставлен — **спросить** («Укажите целевой URL, например `app.example.com`. Без этого я не могу подготовить стратегию.») и **не подставлять заглушки**.
+
+---
+
+## 1. Основные положения
+
+- Развёртывание через **Docker Compose**.  
+- **Caddy** для TLS и обратного прокси.  
+- **Все секреты/служебные имена/URL — только в `.env`** (+ `./.env.example` без секретов).  
+- Контейнеры **backend** и **frontend** **собираются на лету** из Dockerfile:  
+  - `app/backend/Dockerfile`  
+  - `app/frontend/Dockerfile`  
+- **Миграции PostgreSQL** выполняются **автоматически при каждом старте бэкенда** с помощью **golang-migrate**, встроенного в образ бэкенда (entrypoint запускает миграции и затем приложение).
+
+---
+
+## 2. .env (переменные окружения)
+
+```
+APP_URL=                 # целевой URL (например, app.example.com)
+CADDY_EMAIL=             # e-mail для TLS
+JWT_SECRET=
+POSTGRES_USER=
+POSTGRES_PASSWORD=
+POSTGRES_DB=
+POSTGRES_HOST=postgres
+POSTGRES_PORT=5432
+DATABASE_URL=postgres://USER:PASSWORD@HOST:5432/DB?sslmode=disable
+BACKEND_PORT=8080
+FRONTEND_PORT=3000
+```
+
+> Примечание: для `DATABASE_URL` указывайте полную строку подключения явно, без вложенных переменных (например, `postgres://$POSTGRES_USER:...`). Docker Compose и инструменты (CLI миграций, драйверы) могут интерполировать вложенные переменные по‑разному. Используйте одну и ту же явную строку для приложения и миграций.
+
+---
+
+## 3. Docker Compose (упрощённая схема сервисов)
+
+> В `infra/docker-compose.yml` не указывать ключ `version` — он устарел в Compose v2; используйте формат без `version`.
+
+Сервисы:
+- `postgres` — PostgreSQL + постоянный volume + healthcheck.  
+- `backend` — образ Go; **entrypoint**: `migrate up && start app`.  
+- `frontend` — React; статическая выдача.  
+- `caddy` — HTTPS proxy: `/api/* → backend`, остальное → frontend.
+
+---
+
+## 4. Caddyfile (прокси и сертификаты)
+
+`infra/caddy/Caddyfile`:
+
+```
+{
+  email {$CADDY_EMAIL}
+}
+
+{$APP_URL} {
+  encode gzip
+  @api path /api/*
+  handle @api {
+    reverse_proxy backend:${BACKEND_PORT}
+  }
+
+  handle {
+    reverse_proxy frontend:${FRONTEND_PORT}
+  }
+}
+```
+
+> Если `APP_URL` не указан во входных данных — **запросить его и остановить генерацию** стратегии.
+
+---
+
+## 5. Dockerfiles (сборка на лету + migrate внутри backend)
+
+**Backend** — `app/backend/Dockerfile` (multi‑stage, включает `migrate` в итоговый образ):
+
+```
+# syntax=docker/dockerfile:1
+
+FROM golang:1.22-alpine AS build
+WORKDIR /src
+RUN apk add --no-cache git
+# Скопировать go.mod/sum отдельно для кеша
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+# Собираем приложение
+RUN CGO_ENABLED=0 go build -o /out/app ./cmd/server
+# Подтягиваем golang-migrate CLI с поддержкой PostgreSQL
+RUN go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest
+
+FROM alpine:3.20
+RUN apk add --no-cache ca-certificates wget
+WORKDIR /app
+COPY --from=build /out/app /app/app
+COPY --from=build /go/bin/migrate /usr/local/bin/migrate
+ENV GIN_MODE=release
+EXPOSE 8080
+ENTRYPOINT ["/app/app"]
+```
+
+> Требование: образ `backend` обязан содержать `migrate`, собранный с поддержкой целевой БД. Для PostgreSQL мигратор должен быть собран с тегом сборки `postgres` (как в примере выше). Это гарантирует наличие драйвера БД внутри бинаря мигратора.
+
+**Frontend** — `app/frontend/Dockerfile`:
+
+```
+# syntax=docker/dockerfile:1
+
+FROM node:20-alpine AS build
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+COPY . .
+RUN npm run build
+
+FROM caddy:2-alpine
+COPY --from=build /app/build /usr/share/caddy
+EXPOSE 3000
+```
+
+---
+
+## 6. Единые команды
+
+- Первый запуск/деплой:  
+  ```bash
+  docker compose build --no-cache
+  docker compose up -d
+  ```
+- Пересборка и рестарт:  
+  ```bash
+  docker compose up -d --build
+  ```
+- Логи:  
+  ```bash
+  docker compose logs -f backend
+  docker compose logs -f caddy
+  ```
+- Остановка:  
+  ```bash
+  docker compose down
+  ```
+
+---
+
+## 7. Секреты и конфигурация
+
+- **Никогда не коммитить**: `.env` (содержит секреты и локальную конфигурацию)
+- **Всегда коммитить**: `.env.example` (шаблон со всеми нужными переменными без значений)
+- **Docker volumes**: если есть локальные data-директории, исключать их из VCS
+
+---
+
+## 8. Чек‑лист
+
+- [ ] `APP_URL` указан явно.  
+- [ ] Все секреты и URL — только в `.env`.  
+- [ ] В `backend` встроен `migrate` и запускается перед приложением. При ошибке миграции контейнер падает.  
+- [ ] `Caddyfile` проксирует `/api/*` на `backend`, остальное — на `frontend`.  
+- [ ] Healthchecks настроены; smoketest добавлен в `docs/deployment.md`.  
+- [ ] Образы собираются из локальных Dockerfile.
+

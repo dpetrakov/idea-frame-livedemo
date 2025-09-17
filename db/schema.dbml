@@ -1,0 +1,67 @@
+Project ideaframe {
+  database_type: "PostgreSQL"
+  note: "Логическая модель данных для MVP: пользователи, инициативы, комментарии. Все времена UTC (timestamptz). Идентификаторы UUID."
+}
+
+Table users {
+  id uuid [pk, note: "Первичный ключ"]
+  login varchar(64) [not null, unique, note: "Уникальный логин пользователя"]
+  display_name varchar(140) [not null, note: "Отображаемое имя"]
+  password_hash varchar(255) [not null, note: "Хеш пароля (bcrypt)"]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+
+  Note: "Пользователь одна роль. Уникальный индекс по login."
+}
+
+Table initiatives {
+  id uuid [pk]
+  title varchar(140) [not null]
+  description_md text [not null, note: "Markdown описание"]
+  author_id uuid [not null, ref: > users.id]
+  assignee_id uuid [ref: > users.id, note: "Ответственный, опционально"]
+  value_score smallint [note: "1..5", default: null]
+  velocity_score smallint [note: "1..5", default: null]
+  cost_score smallint [note: "1..5", default: null]
+  weight numeric(3,1) [note: "Кеш вычисленного веса (round((value*velocity)/cost,1))", default: null]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+
+  indexes {
+    (author_id)
+    (assignee_id)
+    weight_desc_idx [name: 'initiatives_weight_desc_idx', note: 'Для сортировки по весу'] (weight)
+    created_at_desc_idx [name: 'initiatives_created_at_desc_idx'] (created_at)
+  }
+
+  Note: "Атрибуты 1..5, weight может быть NULL если не все заданы."
+}
+
+Table comments {
+  id uuid [pk]
+  initiative_id uuid [not null, ref: > initiatives.id]
+  author_id uuid [not null, ref: > users.id]
+  body varchar(2000) [not null]
+  created_at timestamptz [not null, default: `now()`]
+
+  indexes {
+    (initiative_id)
+    (author_id)
+    created_at_idx (created_at)
+  }
+}
+
+Ref: initiatives.author_id > users.id [update: restrict, delete: restrict]
+Ref: initiatives.assignee_id > users.id [update: restrict, delete: set null]
+Ref: comments.initiative_id > initiatives.id [update: restrict, delete: cascade]
+Ref: comments.author_id > users.id [update: restrict, delete: restrict]
+
+// Ограничения значений 1..5
+// В DBML нет нативного CHECK, фиксируем как ноты; при генерации SQL добавить CHECK
+//  value_score BETWEEN 1 AND 5, velocity_score BETWEEN 1 AND 5, cost_score BETWEEN 1 AND 5
+
+// Бизнес‑правила:
+// - weight пересчитывается приложением при изменении value/velocity/cost
+// - Сортировка списков: ORDER BY weight DESC NULLS LAST, created_at DESC
+
+
