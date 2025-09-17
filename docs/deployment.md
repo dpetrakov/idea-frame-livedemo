@@ -70,8 +70,6 @@ infra/
 Разместите файл в `infra/docker-compose.yml`.
 
 ```yaml
-version: "3.9"
-
 services:
   postgres:
     image: postgres:16-alpine
@@ -204,7 +202,7 @@ COPY app/backend/ .
 # Собираем приложение
 RUN CGO_ENABLED=0 go build -o /out/app ./cmd/server
 # Устанавливаем migrate CLI
-RUN go install github.com/golang-migrate/migrate/v4/cmd/migrate@latest
+RUN go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest
 
 FROM alpine:3.20
 RUN apk add --no-cache ca-certificates bash
