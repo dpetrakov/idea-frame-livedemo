@@ -22,12 +22,17 @@ func NewRouter(
 ) http.Handler {
 	r := chi.NewRouter()
 	
+	// Создаём репозитории
+	initiativeRepo := repo.NewInitiativeRepository(db.Pool, logger)
+	
 	// Создаём сервисы
 	authService := service.NewAuthService(db, cfg.JWTSecret, cfg.JWTExpiration)
+	initiativeService := service.NewInitiativeService(initiativeRepo, logger)
 	
 	// Создаём handlers
 	authHandler := handlers.NewAuthHandler(authService)
 	healthHandler := handlers.NewHealthHandler(db)
+	initiativeHandler := handlers.NewInitiativeHandlers(initiativeService)
 	
 	// Глобальные middleware
 	r.Use(middleware.RequestID)
@@ -55,6 +60,14 @@ func NewRouter(
 			r.Route("/users", func(r chi.Router) {
 				r.Get("/me", authHandler.GetCurrentUser)
 				r.Get("/", authHandler.ListUsers)
+			})
+			
+			// Инициативы
+			r.Route("/initiatives", func(r chi.Router) {
+				r.Get("/", initiativeHandler.ListInitiatives)       // GET /initiatives - список (подготовка к TK-005)
+				r.Post("/", initiativeHandler.CreateInitiative)     // POST /initiatives - создание
+				r.Get("/{id}", initiativeHandler.GetInitiative)     // GET /initiatives/{id} - детали
+				r.Patch("/{id}", initiativeHandler.UpdateInitiative) // PATCH /initiatives/{id} - обновление (подготовка к TK-003, TK-006)
 			})
 		})
 	})

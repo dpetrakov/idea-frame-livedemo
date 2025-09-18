@@ -11,6 +11,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/google/uuid"
 	"github.com/ideaframe/backend/internal/service"
+	"github.com/ideaframe/backend/internal/telemetry"
 )
 
 // ContextKey тип для ключей контекста
@@ -67,6 +68,10 @@ func RequestID(next http.Handler) http.Handler {
 func Logger(logger *slog.Logger) func(next http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Добавляем логгер в контекст
+			ctx := context.WithValue(r.Context(), telemetry.LoggerKey, logger)
+			r = r.WithContext(ctx)
+			
 			start := time.Now()
 			ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
 			
@@ -136,6 +141,22 @@ func CORS(next http.Handler) http.Handler {
 		
 		next.ServeHTTP(w, r)
 	})
+}
+
+// UserIDFromContext получает ID пользователя из контекста
+func UserIDFromContext(ctx context.Context) uuid.UUID {
+	if userID, ok := ctx.Value(UserIDKey).(uuid.UUID); ok {
+		return userID
+	}
+	return uuid.Nil
+}
+
+// RequestIDFromContext получает ID запроса из контекста
+func RequestIDFromContext(ctx context.Context) string {
+	if requestID, ok := ctx.Value(RequestIDKey).(string); ok {
+		return requestID
+	}
+	return ""
 }
 
 // Recoverer восстанавливается после паники

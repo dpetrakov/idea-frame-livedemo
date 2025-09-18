@@ -1,6 +1,7 @@
 package telemetry
 
 import (
+	"context"
 	"log/slog"
 	"os"
 )
@@ -36,4 +37,21 @@ func NewLogger(level string, env string) *slog.Logger {
 	}
 	
 	return slog.New(handler)
+}
+
+// ContextKey тип для ключей контекста
+type ContextKey string
+
+const (
+	// LoggerKey ключ для логгера в контексте
+	LoggerKey ContextKey = "logger"
+)
+
+// LoggerFromContext получает логгер из контекста
+func LoggerFromContext(ctx context.Context) *slog.Logger {
+	if logger, ok := ctx.Value(LoggerKey).(*slog.Logger); ok {
+		return logger
+	}
+	// Возвращаем стандартный логгер если не найден
+	return slog.Default()
 }

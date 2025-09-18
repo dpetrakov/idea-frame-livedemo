@@ -1,4 +1,4 @@
-const API_BASE = import.meta.env.VITE_API_BASE || '/api/v1';
+const API_BASE = import.meta.env.VITE_API_BASE || '/api';
 
 export interface ApiError {
   code: string;
@@ -79,3 +79,36 @@ export class ApiClient {
 }
 
 export const apiClient = new ApiClient();
+
+// Compatibility function for features
+export async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const url = `${API_BASE}${path}`;
+  
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+
+  if (apiClient.getToken()) {
+    headers['Authorization'] = `Bearer ${apiClient.getToken()}`;
+  }
+
+  const response = await fetch(url, {
+    ...options,
+    headers: { ...headers, ...(options.headers || {}) },
+  });
+
+  if (!response.ok) {
+    let error: ApiError;
+    try {
+      error = await response.json();
+    } catch {
+      error = {
+        code: 'NETWORK_ERROR',
+        message: 'Ошибка сети',
+      };
+    }
+    throw error;
+  }
+
+  return response.json();
+}

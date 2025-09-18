@@ -8,6 +8,7 @@ import (
 // Стандартные ошибки домена
 var (
 	ErrNotFound       = errors.New("resource not found")
+	ErrUserNotFound   = errors.New("user not found")
 	ErrUnauthorized   = errors.New("unauthorized")
 	ErrForbidden      = errors.New("forbidden")
 	ErrConflict       = errors.New("conflict")

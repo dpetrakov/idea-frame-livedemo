@@ -50,7 +50,7 @@ tasks:
   - id: TK-002
     title: Инициативы — создание и просмотр карточки
     order: 20
-    status: spec-prepared
+    status: done
     frRefs: [FR1]
     context:
       prd: "docs/prd.md#FR1.-Создание-инициативы"
@@ -60,13 +60,13 @@ tasks:
       deployment: "docs/deployment.md#health-проверки"
     acceptanceCriteria:
       - text: "POST /initiatives создаёт инициативу, валидации названия/описания соблюдены"
-        done: false
+        done: true
       - text: "GET /initiatives/{id} возвращает инициативу с автором и датами"
-        done: false
+        done: true
       - text: "Markdown описания корректно передаётся и хранится"
-        done: false
+        done: true
       - text: "Миграции для таблицы initiatives применяются автоматически"
-        done: false
+        done: true
     subtasks:
       - id: TK-002/AN
         role: AN
@@ -77,15 +77,15 @@ tasks:
       - id: TK-002/BE
         role: BE
         title: Эндпоинты POST /initiatives, GET /initiatives/{id}
-        status: planned
+        status: done
       - id: TK-002/FE
         role: FE
         title: Экран создания инициативы и карточка
-        status: planned
+        status: done
       - id: TK-002/DV
         role: DV
         title: Миграции БД для initiatives
-        status: planned
+        status: done
 
   - id: TK-003
     title: Атрибуты оценки и расчёт веса инициативы
