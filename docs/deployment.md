@@ -1,178 +1,132 @@
-# Стратегия развертывания: Idea Frame Livedemo
+# Стратегия развертывания (Docker Compose + Caddy)
 
 Целевой домен: ideaframe.dimlight.online
 
-Цель: развернуть демо‑приложение (Go API + PostgreSQL + React SPA) на одном хосте с использованием Docker Compose и Caddy (TLS и обратный прокси). Конфигурация должна быть одинаковой для prod и dev, отличаться только `.env`.
+Документ описывает единый способ развёртывания для локальной разработки и продакшн‑сервера. Конфиги едины, различаются только значения переменных в файле .env.
 
-## Архитектура развертывания
+## Архитектура окружения
 
-- Обратный прокси и TLS: Caddy (автоматические сертификаты Let's Encrypt)
-- Backend: монолит на Go, HTTP API
-- БД: PostgreSQL (персистентный volume)
-- Frontend: React SPA, статическая выдача
-- Миграции: golang‑migrate как отдельная job в Docker Compose (см. Примечание о вариантах)
+- Caddy (HTTPS, reverse proxy)
+- Backend (Go, API `/api/v1/*`, алиас `/api/health`)
+- Frontend (React, статическая выдача)
+- PostgreSQL (данные в volume)
 
-Трафик: `https://ideaframe.dimlight.online` → Caddy →
-- `/api/*` → backend:8080
-- остальные пути → frontend:3000
+Роутинг:
+- `https://ideaframe.dimlight.online/api/*` → backend
+- Остальные запросы → frontend
 
-## Предпосылки и требования к среде
+## DNS и сеть
 
-1) DNS
-- A/AAAA запись для `ideaframe.dimlight.online` указывает на публичный IP сервера.
+- Создайте DNS A/AAAA записи на IP сервера для `ideaframe.dimlight.online`.
+- Откройте на сервере входящие порты 80 и 443 (HTTPS через Caddy / ACME).
 
-2) Сеть и firewall
-- Открыты входящие TCP порты 80 и 443.
+## Переменные окружения (.env)
 
-3) ПО на сервере
-- Docker Engine + Docker Compose v2
+Хранится в корне репозитория: `./.env`. Пример содержимого:
 
-Установка (Ubuntu 22.04+):
-```bash
-sudo apt-get update
-sudo apt-get install -y ca-certificates curl gnupg lsb-release
-sudo install -m 0755 -d /etc/apt/keyrings
-curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-echo \
-  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
-  $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-sudo apt-get update
-sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-sudo usermod -aG docker $USER
-newgrp docker
-docker compose version | cat
-```
-
-## Конфигурация через `.env`
-
-Файл `.env` хранится в корне репозитория и не коммитится. Шаблон — `.env.example`.
-
-Ключевые переменные:
 ```
 APP_URL=ideaframe.dimlight.online
-CADDY_EMAIL=
-JWT_SECRET=
-POSTGRES_USER=
-POSTGRES_PASSWORD=
-POSTGRES_DB=
+CADDY_EMAIL=you@example.com
+
+# PostgreSQL
+POSTGRES_USER=idea
+POSTGRES_PASSWORD=strong_password
+POSTGRES_DB=idea
 POSTGRES_HOST=postgres
 POSTGRES_PORT=5432
-DATABASE_URL=postgres://USER:PASSWORD@HOST:5432/DB?sslmode=disable
+
+# App
 BACKEND_PORT=8080
 FRONTEND_PORT=3000
+JWT_SECRET=change_me
+
+# Полная строка подключения (явно)
+DATABASE_URL=postgres://idea:strong_password@postgres:5432/idea?sslmode=disable
 ```
 
-Рекомендации:
-- Используйте достаточно длинный `JWT_SECRET` (не менее 32 байт).
-- Для `DATABASE_URL` указывайте полную строку, не ссылаясь на другие переменные.
+Не коммитьте `.env`. Поддерживайте `.env.example` без секретов.
 
-## Docker Compose (план)
+## Сборка и запуск
 
-Сервисы:
-- `postgres`: официальное изображение PostgreSQL, volume `pgdata`, healthcheck.
-- `backend`: образ Go приложения; зависит от `postgres`.
-- `frontend`: образ React SPA (статическая выдача); внутренний порт 3000.
-- `caddy`: внешний вход; проксирует `/api/*` на backend и остальное на frontend; выпускает TLS.
-- `migrate`: одноразовая job с `golang-migrate`, применяет миграции к БД.
+Команды выполняются из корня репозитория:
 
-Особенности:
-- Хранение данных БД в именованном volume.
-- Конфигурация Caddy берёт домен и почту из `.env`.
-
-Файлы инфраструктуры (будут добавлены отдельно):
-- `infra/docker-compose.yml`
-- `infra/caddy/Caddyfile`
-
-Запуск команд всегда из корня проекта с явным указанием `.env` и compose‑файла:
 ```bash
-docker compose --env-file ./.env -f infra/docker-compose.yml build --no-cache
-docker compose --env-file ./.env -f infra/docker-compose.yml up -d
-```
-
-Обновление:
-```bash
+# Первый запуск/обновление
 docker compose --env-file ./.env -f infra/docker-compose.yml up -d --build
-```
 
-Логи (пример):
-```bash
+# Просмотр состояния
+docker compose --env-file ./.env -f infra/docker-compose.yml ps
+
+# Логи
 docker compose --env-file ./.env -f infra/docker-compose.yml logs -f caddy | cat
 docker compose --env-file ./.env -f infra/docker-compose.yml logs -f backend | cat
-```
 
-Остановка:
-```bash
+# Остановка
 docker compose --env-file ./.env -f infra/docker-compose.yml down
 ```
 
-## Caddy (маршрутизация и TLS)
+Перед первым продакшн‑запуском убедитесь, что в каталоге `app/frontend/` установлены зависимости для корректной сборки:
 
-Правила:
-- Всегда HTTPS с жёстким редиректом HTTP → HTTPS.
-- Прод: автоматический выпуск сертификатов Let's Encrypt (ACME) с `CADDY_EMAIL`.
-- Базовые заголовки безопасности: HSTS, X-Content-Type-Options, X-Frame-Options, Referrer-Policy, CSP.
-
-## Миграции БД
-
-Выбран целевой вариант по архитектуре: отдельная job `migrate` (одиночный запуск на деплой). Альтернативно допустим запуск `migrate` в entrypoint контейнера `backend` (вариант из правила deploy‑rules). Выбор варианта не меняет остальную конфигурацию.
-
-Рекомендации:
-- При первом деплое запустите job вручную либо автоматически через `depends_on` и условие `service_completed_successfully`.
-- При ошибке миграции деплой должен считаться неуспешным.
-
-## Чек‑лист продакшн‑готовности
-
-- APP_URL явно установлен: `ideaframe.dimlight.online`.
-- DNS указывает на сервер, порты 80/443 открыты.
-- Все секреты и URL — только в `.env`.
-- Миграции выполняются до старта приложения; при ошибке — остановка.
-- Caddy проксирует `/api/*` на backend, остальное — на frontend.
-- Включён редирект HTTP → HTTPS.
-- Заголовки безопасности выставлены (HSTS, CSP, X‑Frame‑Options, X‑Content‑Type‑Options, Referrer‑Policy).
-- Указан `CADDY_EMAIL`, сертификаты выпускаются автоматически.
-
-## Смоук‑тест после деплоя
-
-1) Главная страница SPA
 ```bash
-curl -I https://ideaframe.dimlight.online | cat
-# Ожидаем: 200/304, заголовки hsts, csp; cert валидный
+cd app/frontend && npm install && cd ../..
 ```
 
-2) Редирект HTTP → HTTPS
+## Проверки после запуска (smoketest)
+
 ```bash
+# Caddy должен быть доступен на 80/443 (внешний доступ)
 curl -I http://ideaframe.dimlight.online | cat
-# Ожидаем: 301 на https
+curl -I https://ideaframe.dimlight.online | cat
+
+# Health чек API
+curl https://ideaframe.dimlight.online/api/health | cat
+
+# OpenAPI сервер из документа
+# Основной префикс API в системе: /api/v1
+curl https://ideaframe.dimlight.online/api/v1/health | cat || true
 ```
 
-3) API health (примерный эндпоинт)
-```bash
-curl -i https://ideaframe.dimlight.online/api/health | cat
-# Ожидаем: 200 и JSON с состоянием
-```
+Ожидаем 200 и JSON со статусом.
 
-4) Доступ к БД (внутри контейнера backend)
-```bash
-docker compose --env-file ./.env -f infra/docker-compose.yml exec backend /bin/sh -lc 'echo ok'
-```
+## Caddy конфигурация
 
-## Процедуры
+Файл: `infra/caddy/Caddyfile` (универсальный для dev/prod). Используется переменная `APP_URL=ideaframe.dimlight.online` из `.env`, автоматический выпуск сертификатов Let's Encrypt.
 
-Бэкап БД (пример с pg_dump):
-```bash
-docker compose --env-file ./.env -f infra/docker-compose.yml exec postgres \
-  pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -F c -f /var/lib/postgresql/data/backup.dump
-```
+Ключевые моменты:
+- Заголовки безопасности: HSTS, CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy.
+- Принудительный редирект HTTP → HTTPS.
+- Прокси `/api/*` на `backend:${BACKEND_PORT}`, остальное на `frontend:${FRONTEND_PORT}`.
 
-Ролбэк контейнеров:
+## Docker Compose
+
+Файл: `infra/docker-compose.yml`.
+
+- `postgres`: БД, volume `postgres_data`, healthcheck `pg_isready`.
+- `backend`: собирается из `app/backend/Dockerfile`; healthcheck по `GET /api/health` на 8080.
+- `frontend`: собирается из `app/frontend/Dockerfile`; раздаёт статику на 3000.
+- `caddy`: image `caddy:2-alpine`, монтирует `infra/caddy/Caddyfile`, открывает 80/443.
+
+## Обновления и релизы
+
 ```bash
-docker compose --env-file ./.env -f infra/docker-compose.yml down
+# Пересборка и быстрый деплой
 docker compose --env-file ./.env -f infra/docker-compose.yml up -d --build
 ```
 
-## Примечания
+## Типовые проблемы
 
-- Выбор способа миграций: по архитектуре — отдельная job; альтернативный вариант — миграции в entrypoint `backend`. Подтвердите желаемый режим — инфраструктурные файлы будут подготовлены в соответствии с выбором.
-- Конфиги едины для prod и dev; отличие только в `.env` (например, `APP_URL=app.localhost` в dev).
+- Сертификат не выдаётся: проверьте DNS, открытые порты 80/443, `CADDY_EMAIL`.
+- Caddy unhealthy: смотрите логи сервиса caddy.
+- Frontend не собирается: установите зависимости `app/frontend/package-lock.json` и выполните `npm install`.
+
+## Чек‑лист
+
+- [x] `APP_URL=ideaframe.dimlight.online` задан в `.env`.
+- [x] `CADDY_EMAIL` заполнен (настоящий e-mail для ACME).
+- [x] Порты 80 и 443 доступны снаружи.
+- [x] PostgreSQL доступен по `DATABASE_URL`.
+- [x] `JWT_SECRET` установлен.
+- [x] Запросы `/api/*` идут в backend; остальное в frontend.
+- [x] `https://ideaframe.dimlight.online/api/health` возвращает 200.
 
 

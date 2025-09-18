@@ -77,6 +77,9 @@ app/backend/
   - сборку роутера (chi) и middleware;
   - запуск HTTP‑сервера с **graceful shutdown** (SIGTERM, таймаут 15–30с);
   - эндпоинты liveness/readiness указываются по `docs/architecture.md` и `docs/openapi.yaml` (пути не хардкодятся в правиле).
+  
+  Обязательный публичный health‑эндпоинт:
+  - `GET /api/health` → 200 OK, JSON `{ "status": "ok", "timestamp": "..." }` и проверка подключения к БД.
 
 ---
 
@@ -122,6 +125,11 @@ app/backend/
 - 400 — валидация входа (схема/поля); 401 — неавторизован; 403 — нет прав;  
 - 404 — не найдено; 409 — конфликт (уникальность/состояние); 422 — доменная валидация;  
 - 500 — непредвиденная ошибка. Всегда JSON‑ответ и `X-Request-ID` в заголовке.
+
+### Формат health‑ответа (пример)
+```json
+{ "status": "ok", "timestamp": "2024-01-01T12:00:00Z" }
+```
 
 ---
 
@@ -206,7 +214,7 @@ func main() {
 # syntax=docker/dockerfile:1
 
 # --- build stage ---
-FROM golang:1.25-alpine AS build
+FROM golang:1.21-alpine AS build
 WORKDIR /src
 RUN apk add --no-cache git ca-certificates upx
 
@@ -239,6 +247,19 @@ ENTRYPOINT ["/app/app"]
 - Сборка с `CGO_ENABLED=0`, `-ldflags="-s -w"`; допустим `upx` (опционально).  
 - Рантайм от non‑root пользователя. Никаких секретов в образе — только через env.  
 - Healthcheck выносится в compose. Логи — в stdout.
+
+### Переменные окружения backend (`.env`)
+
+```env
+# ОБЯЗАТЕЛЬНЫЕ
+DATABASE_URL=postgres://user:password@postgres:5432/db?sslmode=disable
+JWT_SECRET=minimum_32_characters_long_secret_key
+BACKEND_PORT=8080
+
+# ОПЦИОНАЛЬНЫЕ
+LOG_LEVEL=info
+GIN_MODE=release
+```
 
 ---
 

@@ -16,10 +16,17 @@ alwaysApply: false
 
 ---
 
+> **КРИТИЧЕСКИ ВАЖНО**
+> 1. Vite требует index.html В КОРНЕ проекта (НЕ в public/)
+> 2. СНАЧАЛА создай package.json → npm install → package-lock.json → затем Docker build
+> 3. Все пути в структуре ОБЯЗАТЕЛЬНО создать перед началом разработки
+> 4. VITE_API_BASE передаётся через build.args в Docker, НЕ через runtime environment
+
 ## 1) Целевая структура `app/frontend/`
 
 ```
 app/frontend/
+├─ index.html                    # ❌ НЕ в public/! Vite требует в корне!
 ├─ src/
 │  ├─ app/
 │  │  ├─ providers.tsx           # React Query, Router, Theme, ErrorBoundary
@@ -47,13 +54,26 @@ app/frontend/
 │  │     └─ theme.css             # темы (light по умолчанию)
 │  ├─ index.css
 │  └─ main.tsx
-├─ public/
-│  └─ index.html
+├─ public/                        # только статические ассеты, НЕ index.html
 ├─ package.json
+├─ package-lock.json              # ОБЯЗАТЕЛЬНО создать через npm install
 ├─ tsconfig.json
 ├─ vite.config.ts                 # сборка Vite (рекомend.)
 └─ Dockerfile
 ```
+
+### ОБЯЗАТЕЛЬНЫЙ алгоритм создания фронтенда
+
+**Строго в таком порядке:**
+
+1. Создать структуру каталогов:
+   ```bash
+   mkdir -p app/frontend/{src/{app,pages,features/{auth,initiatives/components},shared/{ui,lib,hooks,styles}},public}
+   ```
+2. Создать package.json с корректными зависимостями
+3. ОБЯЗАТЕЛЬНО: `cd app/frontend && npm install` → создаст package-lock.json
+4. Создать все файлы компонентов и конфигурации (index.html, main.tsx, стили, ui)
+5. Только потом — Docker build
 
 **Стек по умолчанию:** React + TypeScript + Vite, React Router, React Query (серверное состояние), CSS Variables (+ по желанию Tailwind или PostCSS). Минимум внешних зависимостей.
 
@@ -297,6 +317,34 @@ frontend:
 Важно:
 - Переменные `VITE_*` доступны приложению только если заданы на этапе сборки (через `ARG`/`ENV`).
 - Передача `VITE_API_BASE` через `environment` на рантайме не повлияет на собранную статику.
+
+### vite.config.ts (обязательно)
+
+```ts
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+
+export default defineConfig({
+  plugins: [react()],
+  build: {
+    outDir: 'dist'
+  }
+})
+```
+
+### Проверочный чеклист перед Docker build
+
+- [ ] `app/frontend/index.html` существует (НЕ в public/)
+- [ ] `app/frontend/package-lock.json` существует
+- [ ] `app/frontend/src/main.tsx` существует
+- [ ] Все каталоги из структуры созданы
+- [ ] `shared/ui/index.ts` экспортирует компоненты
+
+### Отладка распространённых ошибок
+
+- "Could not resolve entry module 'index.html'" → переместить `index.html` из `public/` в корень `app/frontend/`
+- "package-lock.json missing" → `cd app/frontend && npm install`
+- "Cannot find module './shared/ui'" → создать `shared/ui/index.ts` с экспортами
 
 ---
 

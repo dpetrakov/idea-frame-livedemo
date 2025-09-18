@@ -39,7 +39,7 @@ alwaysApply: false
 
 ```
 APP_URL=                 # Prod: app.example.com ; Dev: app.localhost
-CADDY_EMAIL=             # E-mail для ACME в prod; в dev можно оставить пустым
+CADDY_EMAIL=             # E-mail для ACME (в dev — задать непустое значение, напр. dev@localhost)
 JWT_SECRET=
 POSTGRES_USER=
 POSTGRES_PASSWORD=
@@ -76,12 +76,11 @@ FRONTEND_PORT=3000
 
 ## 4. Caddyfile (прокси и сертификаты)
 
-`infra/caddy/Caddyfile`:
+`infra/caddy/Caddyfile` (универсальный для dev/prod):
 
 ```
 {
-  # Глобальные настройки
-  auto_https on
+  # Глобальные настройки (auto_https не указываем — Caddy выберет режим автоматически)
   email {$CADDY_EMAIL}
 }
 
@@ -116,7 +115,7 @@ http://{$APP_URL} {
 
 ### HTTPS режимы: Production и Development
 - **Prod (домен)**: укажите в `.env` `APP_URL` = реальный FQDN (например, `app.example.com`) и `CADDY_EMAIL`. Убедитесь, что DNS A/AAAA указывает на сервер и открыты порты `80` и `443`. Caddy автоматически выпустит и продлит валидный сертификат.
-- **Dev (localhost)**: укажите `APP_URL=app.localhost`. При включённом `auto_https on` Caddy автоматически использует внутренний CA (**эквивалентно `tls internal`**) и выдаёт самоподписанный сертификат, доверенный локальной системе Caddy. Конфиги менять не нужно; достаточно различий в `.env`.
+- **Dev (localhost)**: укажите `APP_URL=app.localhost` и непустой `CADDY_EMAIL` (например, `dev@localhost`). Без явного `auto_https` Caddy автоматически использует внутренний CA для `*.localhost` и выпустит самоподписанный сертификат. Конфиги менять не нужно; различается только `.env`.
 
 > Если `APP_URL` не указан во входных данных — **запросить его и остановить генерацию** стратегии.
 
@@ -166,7 +165,7 @@ COPY . .
 RUN npm run build
 
 FROM caddy:2-alpine
-COPY --from=build /app/build /usr/share/caddy
+COPY --from=build /app/dist /usr/share/caddy  # dist/, а не build/
 EXPOSE 3000
 ```
 
@@ -216,4 +215,79 @@ EXPOSE 3000
  - [ ] Prod: указан `CADDY_EMAIL`, сертификат выпускается автоматически.  
  - [ ] Dev: используется `APP_URL=app.localhost`, Caddy выдаёт самоподписанный сертификат через внутренний CA.  
  - [ ] Между prod и dev отличаются только значения в `.env`; конфиги не меняются.
+
+---
+
+## 9. Проверенный алгоритм развертывания
+
+### Локальная разработка
+```bash
+# 1. Проверить .env файл
+cat .env  # APP_URL=app.localhost, CADDY_EMAIL=dev@localhost
+
+# 2. Создать зависимости фронтенда ПЕРЕД Docker (для npm ci)
+cd app/frontend && npm install && cd ../..
+
+# 3. Запуск (единая команда)
+docker compose --env-file ./.env -f infra/docker-compose.yml up -d --build
+```
+
+### Продакшн сервер
+```bash
+# 1. Скопировать и настроить .env
+cp .env.example .env
+# Отредактировать: APP_URL, CADDY_EMAIL, пароли, секреты
+
+# 2. Убедиться что DNS настроен
+nslookup yourdomain.com  # должен указывать на сервер
+
+# 3. Запуск (команда точно такая же)
+docker compose --env-file ./.env -f infra/docker-compose.yml up -d --build
+```
+
+---
+
+## 10. Отладка Caddy и типовых проблем
+
+Частые ошибки и решения:
+
+- "auto_https must be one of..." → Уберите `auto_https` из Caddyfile, Caddy определит режим сам.
+- "parsing caddyfile tokens for 'email'" → Проверьте, что `CADDY_EMAIL` в `.env` не пустой.
+- "certificate obtain failed" → Проверьте DNS, открытые порты 80/443, корректный `CADDY_EMAIL`.
+- Caddy перезапускается → `docker compose --env-file ./.env -f infra/docker-compose.yml logs caddy` покажет точную ошибку.
+
+Типовые сценарии:
+
+- Frontend не собирается:
+  1) Проверьте наличие `app/frontend/package-lock.json`  
+  2) Убедитесь, что `app/frontend/index.html` в корне (НЕ в public/)  
+  3) Выполните `cd app/frontend && npm install`
+
+- Caddy падает с ошибкой конфигурации:
+  1) Синтаксис Caddyfile (без `auto_https on`)  
+  2) `CADDY_EMAIL` не пустой  
+  3) Для dev используйте `app.localhost`, для prod — реальный домен
+
+- Let's Encrypt ошибки в prod:
+  1) `dig yourdomain.com` — DNS должен указывать на сервер  
+  2) Проверка доступности портов 80/443 снаружи  
+  3) Корректный email в `CADDY_EMAIL`
+
+---
+
+## 11. Тестирование после запуска
+
+```bash
+# Проверить статус всех сервисов
+docker compose --env-file ./.env -f infra/docker-compose.yml ps
+
+# Все должны быть healthy или running
+
+# Тестирование доступности бэка
+curl -k https://app.localhost/api/health  # dev
+curl https://yourdomain.com/api/health    # prod
+
+# Если Caddy unhealthy — смотреть логи
+docker compose --env-file ./.env -f infra/docker-compose.yml logs caddy
+```
 
