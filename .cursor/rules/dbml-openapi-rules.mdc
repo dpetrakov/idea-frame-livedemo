@@ -1,0 +1,151 @@
+---
+description: Использовать это правило, когда требуется создать **логическую модель данных** в формате `.dbml` и спецификацию **OpenAPI** для взаимодействия фронтенда и бэкенда.
+alwaysApply: false
+---
+
+# Rules: Создание логической модели данных (.dbml) и OpenAPI
+
+> **Description**  
+> Использовать это правило, когда требуется **одновременно** подготовить логическую модель данных (`.dbml`) и спецификацию **OpenAPI**. Документ описывает лучшие практики согласования БД и API, чтобы обеспечить качество, предсказуемость и проверяемость на демо и в реальной разработке.
+
+> **Dependencies**  
+> - Обязательно использовать контекст из `docs/prd.md` (источник требований).  
+> - Обязательно использовать контекст из `docs/architecture.md` (сущности, потоки, контур API).  
+> - Используй домен публикации для OpenAPI из `docs/deployment.md` 
+
+> **Filenames & Locations**  
+> - Логическая модель данных: `db/schema.dbml`  
+> - Спецификация API: `docs/openapi.yaml` (OpenAPI 3.0.3, YAML - соблюдай синтаксис и спецификацию)
+
+---
+
+## 0. Конвенции (единые для БД и API)
+
+- **Идентификаторы**: `uuid` (предпочтительно v4/v7). В БД — `uuid` с первичным ключом `id`. В API — `id: string (uuid)`.  
+- **Время**: всегда хранить в UTC; в БД — `timestamptz`, в API — `string` с `format: date-time` (RFC 3339). Поля: `created_at`, `updated_at` (только сервер выставляет).  
+- **Именование**:  
+  - БД — `snake_case` для таблиц/столбцов (`initiatives`, `value_score`).  
+  - API — `camelCase` для JSON-полей (`valueScore`).  
+  - Стабильные, человекочитаемые имена enum-значений (см. ниже).  
+- **Нормализация**: нормализуем до 3НФ, денормализацию используем осознанно (фиксируем в архитектуре/ADR).  
+- **Удаление**: по умолчанию «жёсткое» удаление; если нужен «мягкий delete» — поле `deleted_at timestamptz NULL` + частичные индексы и фильтры в API.  
+- **Оптимистичная блокировка** (опционально): поле `version integer` или `updated_at` в `If-Unmodified-Since`/`If-Match` (см. API).
+
+---
+
+## 1. Синхронность и соответствие между DBML и OpenAPI
+
+- Разрабатываем **вместе**: любое поле/тип/ограничение, появляющееся в `schema.dbml`, **должно** иметь отражение в `components/schemas` OpenAPI (и наоборот).  
+- Единый словарь сущностей и полей: таблица соответствия `DB → API` (snake_case → camelCase).  
+- Правила доменов значений (диапазоны, enum) задаём **и** в БД (`CHECK`, `ENUM`/`domain`) **и** в OpenAPI (`enum`, `minimum/maximum`, `pattern`).
+
+---
+
+## 2. Лучшие практики для `db/schema.dbml`
+
+1) **Ключи и связи**
+- Каждая таблица: `id uuid PK`.  
+- Внешние ключи: `ON UPDATE RESTRICT`, `ON DELETE` по смыслу: `RESTRICT`/`SET NULL`/`CASCADE` (фиксируем явно).  
+- Уникальные ограничения для природных ключей (email, slugs).
+
+2) **Типы и ограничения**
+- `timestamptz` для времени; `integer`/`smallint` для шкал/оценок; `numeric(p,s)` для денег/долей.  
+- Домены значений через `CHECK` (например, `value_score BETWEEN 1 AND 5`).  
+- Не допускать `NULL`, где это не нужно (явно отмечать `NOT NULL`).
+
+3) **Индексы**
+- Индексируем колонки фильтров/сортировок (например, `(weight DESC, updated_at DESC)`).  
+- Частичные индексы при soft-delete: `WHERE deleted_at IS NULL`.  
+- Поиск по названию: `GIN` + `pg_trgm` или `to_tsvector` (если нужен полнотекст).
+
+4) **Аудит и служебные поля**
+- `created_at`, `updated_at` с `DEFAULT now()` и триггером/приложением на обновление.  
+- (Опционально) `created_by`, `updated_by` (FK → users).
+
+5) **ENUM и справочники**
+- Где значения стабильны (1..5; статусы): либо `ENUM` с осознанным управлением миграциями, либо отдельные справочные таблицы. **Рекомендация**: для демо — `CHECK`, для продуктивной эволюции — справочник.
+
+6) **Производные значения**
+- Вычисляемые поля (например, `weight`) не храним, если можно вычислить на лету; если храним — документируем формулу и обновление в триггере или в приложении.  
+- Консистентность проверяем `CHECK`/триггером (при необходимости).
+
+7) Отдельными блоками в конце файла НЕ надо делать Table relationships и Business rules and constraints
+
+---
+
+## 3. Лучшие практики для `docs/openapi.yaml`
+
+1) **Базовые элементы**
+- `openapi: "3.0.3"`; `info` (title=ProjectName, version), `servers` с base URL и переменными.  
+- Версионирование API: префикс `/v1` в `paths`. Изменения — через `/v2`.
+
+2) **Security**
+- `components.securitySchemes.bearerAuth` тип `http`, схема `bearer`, `bearerFormat: JWT`.  
+- Глобально: `security: [{ bearerAuth: [] }]`. 401/403 описаны для защищённых методов.
+
+3) **Схемы данных**
+- Разделение моделей на **Write** и **Read** (например, `InitiativeCreate`, `InitiativeUpdate`, `Initiative`), чтобы id/времена не принимались на вход.  
+- Строгая типизация: `integer` (`format: int32/int64`), `string` с `format` (`uuid`, `date-time`), `enum` для шкал/статусов.  
+- Единые `components/schemas` + многократные `$ref` в `paths`.  
+- Обязательные поля через `required: [...]`.  
+- Примеры (`example`/`examples`) для основных схем.
+
+4) **Пагинация и фильтры**
+- Рекомендуется курсорная пагинация: `pageSize`, `cursor` (или классика: `limit`, `offset`).  
+- Обязательные описания для query-параметров (тип, ограничения).
+
+5) **Ошибки**
+- Единый формат ошибки:  
+```yaml
+components:
+  schemas:
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code: { type: string, example: "VALIDATION_ERROR" }
+        message: { type: string, example: "Title is required" }
+        details: { type: object, additionalProperties: true }
+        correlationId: { type: string, format: uuid }
+```
+- Привязка для 400/401/403/404/409/422/500 с `application/json` и `$ref: '#/components/schemas/Error'`.
+
+6) **Идемпотентность и конкурентность (опционально)**
+- Для повторяемых POST — заголовок `Idempotency-Key` (описать в `parameters`).  
+- Для PATCH/PUT — поддержать `If-Match` (ETag) или `If-Unmodified-Since` с `updated_at`.
+
+7) **Теги и группировка**
+- Использовать `tags` для групп: `Auth`, `Initiatives`, `Comments`, `Users`.  
+- В `paths` каждый метод с понятным `summary`, `operationId` в `lowerCamel`.
+
+---
+
+## 4. Согласование БД ↔ API (правила трансформации)
+
+- **Имена**: `db.snake_case` ↔ `api.camelCase` (`updated_at` → `updatedAt`).  
+- **Типы**: `uuid` ↔ `string(uuid)`; `timestamptz` ↔ `string(date-time)`; `smallint` ↔ `integer`.  
+- **NULL/nullable**: `NULL` в БД ↔ `nullable: true` в OpenAPI.  
+- **CHECK** в БД ↔ `minimum/maximum`/`enum` в OpenAPI.  
+- **FK** в БД ↔ `*Id` поля в API (или вложенные объекты + `allOf` с `oneOf` при необходимости).
+
+---
+
+## 5. Валидация и инструменты качества
+
+- **DBML**: проверить валидатором/генератором (dbml-cli/плагины).  
+- **OpenAPI**: линтер **Spectral** + валидатор (Swagger CLI/Redocly).  
+- Pre-commit: проверка линтерами; запрет на inline-схемы в `paths` (всё через `$ref`).
+
+---
+
+## 6. Чек-лист качества перед ревью
+
+- [ ] Каждая сущность из PRD/архитектуры отражена в DBML и в `components/schemas`.  
+- [ ] Все диапазоны/перечисления зафиксированы как `CHECK`/`enum` в БД и как `enum`/`minimum/maximum` в OpenAPI.  
+- [ ] Все внешние ключи имеют корректные `ON DELETE`/`ON UPDATE`.  
+- [ ] Индексы покрывают фильтры/сортировки и частые join.  
+- [ ] Разделены схемы **Create/Update/Read** в OpenAPI.  
+- [ ] Описаны 401/403/404/409/422/500 с единой схемой `Error`.  
+- [ ] JWT-авторизация описана через `bearerAuth`.  
+- [ ] Везде указаны `required`, `nullable`, `format`, `maxLength`, `examples`.  
+- [ ] Линтеры/валидаторы.  

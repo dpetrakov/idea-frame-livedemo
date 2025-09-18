@@ -1,0 +1,81 @@
+---
+description: Правила работы и порядок использования правил
+globs:
+alwaysApply: true
+---
+# Правила работы и порядок использования правил
+
+Этот документ фиксирует обязательные для Агента правила работы в репозитории и приоритет использования проектных артефактов. Ссылки ниже ведут на нормативные правила в `.cursor/rules/` и ключевые документы в `docs/`.
+
+## TL;DR (быстрый старт)
+1. Прочитай целевую структуру репозитория: [.cursor/rules/repo-structure.mdc](.cursor/rules/repo-structure.mdc)
+2. Сверь контекст задачи с PRD и архитектурой: [docs/prd.md](docs/prd.md), [docs/architecture.md](docs/architecture.md)
+3. Перед фронтендом — следуй: [.cursor/rules/dev-frontend-rules.mdc](.cursor/rules/dev-frontend-rules.mdc)
+4. Перед бэкендом — следуй: [.cursor/rules/dev-backend-rules.mdc](.cursor/rules/dev-backend-rules.mdc)
+5. При изменении API/данных — обновляй: [.cursor/rules/dbml-openapi-rules.mdc](.cursor/rules/dbml-openapi-rules.mdc) и `docs/openapi.yaml`
+6. Для развёртывания — смотри: [.cursor/rules/deploy-rules.mdc](.cursor/rules/deploy-rules.mdc) и [docs/deployment.md](docs/deployment.md)
+7. Взаимодействуй с задачами по: [.cursor/rules/tasks-rules.mdc](.cursor/rules/tasks-rules.mdc) и `tasks/tasks.yaml`
+
+## Приоритет источников (в порядке применения)
+1. Структура репозитория и границы каталогов — [.cursor/rules/repo-structure.mdc](.cursor/rules/repo-structure.mdc)
+2. Продуктовый контекст — [docs/prd.md](docs/prd.md)
+3. Архитектурные ограничения — [docs/architecture.md](docs/architecture.md)
+4. Правила спецификаций задач (сквозных) — [.cursor/rules/spec-rules.mdc](.cursor/rules/spec-rules.mdc)
+5. Правила разработки фронтенда — [.cursor/rules/dev-frontend-rules.mdc](.cursor/rules/dev-frontend-rules.mdc)
+6. Правила разработки бэкенда — [.cursor/rules/dev-backend-rules.mdc](.cursor/rules/dev-backend-rules.mdc)
+7. Модель данных и API — [.cursor/rules/dbml-openapi-rules.mdc](.cursor/rules/dbml-openapi-rules.mdc), [docs/openapi.yaml](docs/openapi.yaml)
+8. Развёртывание и инфраструктура — [.cursor/rules/deploy-rules.mdc](.cursor/rules/deploy-rules.mdc), [docs/deployment.md](docs/deployment.md)
+9. Управление задачами — [.cursor/rules/tasks-rules.mdc](.cursor/rules/tasks-rules.mdc), [tasks/tasks.yaml](tasks/tasks.yaml)
+10. Правила PRD — [.cursor/rules/prd-rules.mdc](.cursor/rules/prd-rules.mdc) (если требуется доработка PRD)
+
+## Базовые принципы для Агента
+- Всегда отвечай на русском языке и соблюдай краткость, сохраняя точность.
+- Сначала уточняй контекст через PRD/архитектуру, затем переходи к реализации по соответствующим правилам разработки.
+- Строго соблюдай целевую структуру каталогов из `repo-structure.mdc`. Новые артефакты создавай в правильных местах.
+- Изменения в API или данных сопровождай синхронным обновлением `docs/openapi.yaml` и `db/schema.dbml` (см. `dbml-openapi-rules.mdc`).
+- Перед изменениями в коде сверяйся с задачами в `tasks/tasks.yaml`; статусы и связи задач веди по `tasks-rules.mdc`.
+
+## Типовые сценарии и что читать/делать
+
+### 1) Новая сквозная фича
+1. Уточни цель и ограничения: [docs/prd.md](docs/prd.md), [docs/architecture.md](docs/architecture.md)
+2. Подготовь детальную спецификацию: [.cursor/rules/spec-rules.mdc](.cursor/rules/spec-rules.mdc)
+3. Спроектируй/актуализируй API и данные: [.cursor/rules/dbml-openapi-rules.mdc](.cursor/rules/dbml-openapi-rules.mdc)
+4. Реализуй бэкенд: [.cursor/rules/dev-backend-rules.mdc](.cursor/rules/dev-backend-rules.mdc)
+5. Реализуй фронтенд: [.cursor/rules/dev-frontend-rules.mdc](.cursor/rules/dev-frontend-rules.mdc)
+6. Обнови документацию и задачи: `docs/openapi.yaml`, `db/schema.dbml`, `tasks/tasks.yaml`
+
+### 2) Фронтенд‑задача
+1. Проверь контракты API: [docs/openapi.yaml](docs/openapi.yaml)
+2. Следуй правилам: [.cursor/rules/dev-frontend-rules.mdc](.cursor/rules/dev-frontend-rules.mdc)
+3. При необходимости инициируй правки API/данных по `dbml-openapi-rules.mdc`
+
+### 3) Бэкенд‑задача
+1. Сверь бизнес‑требования: [docs/prd.md](docs/prd.md)
+2. Актуализируй схему и OpenAPI при изменениях: [.cursor/rules/dbml-openapi-rules.mdc](.cursor/rules/dbml-openapi-rules.mdc)
+3. Следуй правилам: [.cursor/rules/dev-backend-rules.mdc](.cursor/rules/dev-backend-rules.mdc)
+
+### 4) Развёртывание/инфраструктура
+1. Стратегия и ограничения: [docs/deployment.md](docs/deployment.md)
+2. Практики и файлы: [.cursor/rules/deploy-rules.mdc](.cursor/rules/deploy-rules.mdc)
+
+## Контроль качества перед PR
+- Структура файлов соответствует `repo-structure.mdc`
+- API и схема синхронизированы: `docs/openapi.yaml` и `db/schema.dbml`
+- Правила разработки соблюдены: `dev-frontend-rules.mdc` / `dev-backend-rules.mdc`
+- Задачи и статусы обновлены: `tasks/tasks.yaml` (см. `tasks-rules.mdc`)
+- Документы актуальны: `docs/prd.md`, `docs/architecture.md`, при необходимости — `docs/deployment.md`
+
+## Быстрые ссылки
+- Структура репозитория: [.cursor/rules/repo-structure.mdc](.cursor/rules/repo-structure.mdc)
+- PRD правила: [.cursor/rules/prd-rules.mdc](.cursor/rules/prd-rules.mdc)
+- Архитектурные правила: [.cursor/rules/architecture-rules.mdc](.cursor/rules/architecture-rules.mdc)
+- Спецификации задач: [.cursor/rules/spec-rules.mdc](.cursor/rules/spec-rules.mdc)
+- Backend (Go): [.cursor/rules/dev-backend-rules.mdc](.cursor/rules/dev-backend-rules.mdc)
+- Frontend (React): [.cursor/rules/dev-frontend-rules.mdc](.cursor/rules/dev-frontend-rules.mdc)
+- DBML & OpenAPI: [.cursor/rules/dbml-openapi-rules.mdc](.cursor/rules/dbml-openapi-rules.mdc)
+- Deploy: [.cursor/rules/deploy-rules.mdc](.cursor/rules/deploy-rules.mdc)
+- Управление задачами: [.cursor/rules/tasks-rules.mdc](.cursor/rules/tasks-rules.mdc)
+- PRD: [docs/prd.md](docs/prd.md)
+- Архитектура: [docs/architecture.md](docs/architecture.md)
+- Развёртывание: [docs/deployment.md](docs/deployment.md)

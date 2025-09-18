@@ -1,0 +1,293 @@
+---
+description: Использовать это правило, когда требуется подготовить **стратегию развертывания** и/или сгенерировать инфраструктурные файлы для проекта.
+alwaysApply: false
+---
+
+# Rules: Deployment (Docker Compose + Caddy) 
+
+> **Description**  
+> Использовать это правило, когда требуется подготовить **стратегию развертывания** и/или сгенерировать инфраструктурные файлы для проекта.
+
+> **Filename & Location**  
+> Стратегию развертывания окружения сохранять в `docs/deployment.md` (перезаписывать целиком).
+
+> **Required Input (обязательно)**  
+> При генерации стратегии развертывания **обязательно** получить **целевой URL** (домен) публикации.  
+> Если URL не предоставлен — **спросить** («Укажите целевой URL, например `app.example.com`. Без этого я не могу подготовить стратегию.») и **не подставлять заглушки**.
+
+---
+
+## 1. Основные положения
+
+- Развёртывание через **Docker Compose**.  
+- **Caddy** для TLS и обратного прокси.  
+- **Все секреты/служебные имена/URL — только в `.env`** (+ `./.env.example` без секретов).  
+- Контейнеры **backend** и **frontend** **собираются на лету** из Dockerfile:  
+  - `app/backend/Dockerfile`  
+  - `app/frontend/Dockerfile`  
+- **Миграции PostgreSQL** выполняются **автоматически при каждом старте бэкенда** с помощью **golang-migrate**, встроенного в образ бэкенда (entrypoint запускает миграции и затем приложение).
+
+### TLS/HTTPS (обязательные требования)
+- **Всегда HTTPS**: весь трафик обслуживается по HTTPS, HTTP → HTTPS жёсткий редирект.
+- **Production**: автоматический выпуск реальных сертификатов через ACME (Let's Encrypt).
+- **Development (localhost)**: использовать самоподписанные сертификаты через внутренний CA Caddy (`tls internal`). Для `*.localhost` это происходит автоматически при включённом `auto_https` — дополнительных правок конфигов не требуется.
+- **Только `.env` меняется между окружениями**. Конфигурационные файлы (`infra/caddy/Caddyfile`, `infra/docker-compose.yml`) едины для prod и dev.
+
+---
+
+## 2. .env (переменные окружения)
+
+```
+APP_URL=                 # Prod: app.example.com ; Dev: app.localhost
+CADDY_EMAIL=             # E-mail для ACME (в dev — задать непустое значение, напр. dev@localhost)
+JWT_SECRET=
+POSTGRES_USER=
+POSTGRES_PASSWORD=
+POSTGRES_DB=
+POSTGRES_HOST=postgres
+POSTGRES_PORT=5432
+DATABASE_URL=postgres://USER:PASSWORD@HOST:5432/DB?sslmode=disable
+BACKEND_PORT=8080
+FRONTEND_PORT=3000
+```
+
+> Примечание: для `DATABASE_URL` указывайте полную строку подключения явно, без вложенных переменных (например, `postgres://$POSTGRES_USER:...`). Docker Compose и инструменты (CLI миграций, драйверы) могут интерполировать вложенные переменные по‑разному. Используйте одну и ту же явную строку для приложения и миграций.
+
+**Расположение и использование `.env`**
+- Файл `.env` хранится в **корне репозитория** (`./.env`).
+- Все команды `docker compose` запускаются **из корня репозитория** с явной передачей файла окружения и compose‑файла:
+  ```bash
+  docker compose --env-file ./.env -f infra/docker-compose.yml up -d
+  ```
+
+---
+
+## 3. Docker Compose (упрощённая схема сервисов)
+
+> В `infra/docker-compose.yml` не указывать ключ `version` — он устарел в Compose v2; используйте формат без `version`.
+
+Сервисы:
+- `postgres` — PostgreSQL + постоянный volume + healthcheck.  
+- `backend` — образ Go; **entrypoint**: `migrate up && start app`.  
+- `frontend` — React; статическая выдача.  
+- `caddy` — HTTPS proxy: `/api/* → backend`, остальное → frontend.
+
+---
+
+## 4. Caddyfile (прокси и сертификаты)
+
+`infra/caddy/Caddyfile` (универсальный для dev/prod):
+
+```
+{
+  # Глобальные настройки (auto_https не указываем — Caddy выберет режим автоматически)
+  email {$CADDY_EMAIL}
+}
+
+{$APP_URL} {
+  # Заголовки безопасности
+  header {
+    Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+    X-Content-Type-Options "nosniff"
+    X-Frame-Options "DENY"
+    Referrer-Policy "strict-origin-when-cross-origin"
+    # Базовая CSP (адаптируйте при необходимости под фронтенд)
+    Content-Security-Policy "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' https://{host} wss://{host}; frame-ancestors 'none'"
+  }
+
+  encode gzip
+
+  @api path /api/*
+  handle @api {
+    reverse_proxy backend:{$BACKEND_PORT}
+  }
+
+  handle {
+    reverse_proxy frontend:{$FRONTEND_PORT}
+  }
+}
+
+# Принудительный редирект HTTP → HTTPS
+http://{$APP_URL} {
+  redir https://{$APP_URL}{uri}
+}
+```
+
+### HTTPS режимы: Production и Development
+- **Prod (домен)**: укажите в `.env` `APP_URL` = реальный FQDN (например, `app.example.com`) и `CADDY_EMAIL`. Убедитесь, что DNS A/AAAA указывает на сервер и открыты порты `80` и `443`. Caddy автоматически выпустит и продлит валидный сертификат.
+- **Dev (localhost)**: укажите `APP_URL=app.localhost` и непустой `CADDY_EMAIL` (например, `dev@localhost`). Без явного `auto_https` Caddy автоматически использует внутренний CA для `*.localhost` и выпустит самоподписанный сертификат. Конфиги менять не нужно; различается только `.env`.
+
+> Если `APP_URL` не указан во входных данных — **запросить его и остановить генерацию** стратегии.
+
+---
+
+## 5. Dockerfiles (сборка на лету + migrate внутри backend)
+
+**Backend** — `app/backend/Dockerfile` (multi‑stage, включает `migrate` в итоговый образ):
+
+```
+# syntax=docker/dockerfile:1
+
+FROM golang:1.22-alpine AS build
+WORKDIR /src
+RUN apk add --no-cache git
+# Скопировать go.mod/sum отдельно для кеша
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+# Собираем приложение
+RUN CGO_ENABLED=0 go build -o /out/app ./cmd/server
+# Подтягиваем golang-migrate CLI с поддержкой PostgreSQL
+RUN go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest
+
+FROM alpine:3.20
+RUN apk add --no-cache ca-certificates wget
+WORKDIR /app
+COPY --from=build /out/app /app/app
+COPY --from=build /go/bin/migrate /usr/local/bin/migrate
+ENV GIN_MODE=release
+EXPOSE 8080
+ENTRYPOINT ["/app/app"]
+```
+
+> Требование: образ `backend` обязан содержать `migrate`, собранный с поддержкой целевой БД. Для PostgreSQL мигратор должен быть собран с тегом сборки `postgres` (как в примере выше). Это гарантирует наличие драйвера БД внутри бинаря мигратора.
+
+**Frontend** — `app/frontend/Dockerfile`:
+
+```
+# syntax=docker/dockerfile:1
+
+FROM node:20-alpine AS build
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+COPY . .
+RUN npm run build
+
+FROM caddy:2-alpine
+COPY --from=build /app/dist /usr/share/caddy  # dist/, а не build/
+EXPOSE 3000
+```
+
+---
+
+## 6. Единые команды
+
+- Первый запуск/деплой:  
+  ```bash
+  docker compose --env-file ./.env -f infra/docker-compose.yml build --no-cache
+  docker compose --env-file ./.env -f infra/docker-compose.yml up -d
+  ```
+- Пересборка и рестарт:  
+  ```bash
+  docker compose --env-file ./.env -f infra/docker-compose.yml up -d --build
+  ```
+- Логи:  
+  ```bash
+  docker compose --env-file ./.env -f infra/docker-compose.yml logs -f backend
+  docker compose --env-file ./.env -f infra/docker-compose.yml logs -f caddy
+  ```
+- Остановка:  
+  ```bash
+  docker compose --env-file ./.env -f infra/docker-compose.yml down
+  ```
+
+---
+
+## 7. Секреты и конфигурация
+
+- **Никогда не коммитить**: `.env` (содержит секреты и локальную конфигурацию)
+- **Всегда коммитить**: `.env.example` (шаблон со всеми нужными переменными без значений)
+- **Docker volumes**: если есть локальные data-директории, исключать их из VCS
+
+---
+
+## 8. Чек‑лист
+
+ - [ ] `APP_URL` указан явно.  
+ - [ ] Все секреты и URL — только в `.env`.  
+ - [ ] В `backend` встроен `migrate` и запускается перед приложением. При ошибке миграции контейнер падает.  
+ - [ ] `Caddyfile` проксирует `/api/*` на `backend`, остальное — на `frontend`.  
+ - [ ] Healthchecks настроены; smoketest добавлен в `docs/deployment.md`.  
+ - [ ] Образы собираются из локальных Dockerfile.
+ - [ ] Включён жёсткий редирект HTTP → HTTPS.  
+ - [ ] Заголовки безопасности выставляются (HSTS, CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy).  
+ - [ ] Prod: указан `CADDY_EMAIL`, сертификат выпускается автоматически.  
+ - [ ] Dev: используется `APP_URL=app.localhost`, Caddy выдаёт самоподписанный сертификат через внутренний CA.  
+ - [ ] Между prod и dev отличаются только значения в `.env`; конфиги не меняются.
+
+---
+
+## 9. Проверенный алгоритм развертывания
+
+### Локальная разработка
+```bash
+# 1. Проверить .env файл
+cat .env  # APP_URL=app.localhost, CADDY_EMAIL=dev@localhost
+
+# 2. Создать зависимости фронтенда ПЕРЕД Docker (для npm ci)
+cd app/frontend && npm install && cd ../..
+
+# 3. Запуск (единая команда)
+docker compose --env-file ./.env -f infra/docker-compose.yml up -d --build
+```
+
+### Продакшн сервер
+```bash
+# 1. Скопировать и настроить .env
+cp .env.example .env
+# Отредактировать: APP_URL, CADDY_EMAIL, пароли, секреты
+
+# 2. Убедиться что DNS настроен
+nslookup yourdomain.com  # должен указывать на сервер
+
+# 3. Запуск (команда точно такая же)
+docker compose --env-file ./.env -f infra/docker-compose.yml up -d --build
+```
+
+---
+
+## 10. Отладка Caddy и типовых проблем
+
+Частые ошибки и решения:
+
+- "auto_https must be one of..." → Уберите `auto_https` из Caddyfile, Caddy определит режим сам.
+- "parsing caddyfile tokens for 'email'" → Проверьте, что `CADDY_EMAIL` в `.env` не пустой.
+- "certificate obtain failed" → Проверьте DNS, открытые порты 80/443, корректный `CADDY_EMAIL`.
+- Caddy перезапускается → `docker compose --env-file ./.env -f infra/docker-compose.yml logs caddy` покажет точную ошибку.
+
+Типовые сценарии:
+
+- Frontend не собирается:
+  1) Проверьте наличие `app/frontend/package-lock.json`  
+  2) Убедитесь, что `app/frontend/index.html` в корне (НЕ в public/)  
+  3) Выполните `cd app/frontend && npm install`
+
+- Caddy падает с ошибкой конфигурации:
+  1) Синтаксис Caddyfile (без `auto_https on`)  
+  2) `CADDY_EMAIL` не пустой  
+  3) Для dev используйте `app.localhost`, для prod — реальный домен
+
+- Let's Encrypt ошибки в prod:
+  1) `dig yourdomain.com` — DNS должен указывать на сервер  
+  2) Проверка доступности портов 80/443 снаружи  
+  3) Корректный email в `CADDY_EMAIL`
+
+---
+
+## 11. Тестирование после запуска
+
+```bash
+# Проверить статус всех сервисов
+docker compose --env-file ./.env -f infra/docker-compose.yml ps
+
+# Все должны быть healthy или running
+
+# Тестирование доступности бэка
+curl -k https://app.localhost/api/health  # dev
+curl https://yourdomain.com/api/health    # prod
+
+# Если Caddy unhealthy — смотреть логи
+docker compose --env-file ./.env -f infra/docker-compose.yml logs caddy
+```
+
