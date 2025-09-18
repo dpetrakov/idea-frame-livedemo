@@ -13,7 +13,7 @@ RUN npm ci
 COPY . .
 
 # Build application with API URL as build arg
-ARG VITE_API_BASE=/api/v1
+ARG VITE_API_BASE=/api
 ENV VITE_API_BASE=$VITE_API_BASE
 
 RUN npm run build

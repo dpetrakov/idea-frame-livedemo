@@ -1,9 +1,6 @@
 # Глобальные настройки Caddy
 {
-	# Email для Let's Encrypt (если указан)
-	{$ACME_EMAIL:email off}
-	
-	# Автоматическое сжатие HTTP/3
+	# Глобальные настройки серверов (HTTP/2 и HTTP/3)
 	servers {
 		protocols h1 h2 h3
 	}

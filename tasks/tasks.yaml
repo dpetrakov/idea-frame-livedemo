@@ -90,7 +90,7 @@ tasks:
   - id: TK-003
     title: Атрибуты оценки и расчёт веса инициативы
     order: 30
-    status: planned
+    status: spec-prepared
     frRefs: [FR3]
     context:
       prd: "docs/prd.md#FR3.-Атрибуты-оценки-инициативы-1–5"
@@ -111,9 +111,9 @@ tasks:
       - id: TK-003/AN
         role: AN
         title: Спецификация по атрибутам и весу
-        status: planned
+        status: done
         outputs:
-          - specs/TK-003.md
+          - docs/specs/TK-003.md
       - id: TK-003/BE
         role: BE
         title: Реализация обновления атрибутов и пересчёта веса
@@ -130,7 +130,7 @@ tasks:
   - id: TK-004
     title: Комментарии к инициативам (чат‑лента)
     order: 40
-    status: planned
+    status: spec-prepared
     frRefs: [FR2]
     context:
       prd: "docs/prd.md#FR2.-Комментарии-в-формате-чата"
@@ -151,7 +151,7 @@ tasks:
       - id: TK-004/AN
         role: AN
         title: Спецификация ленты комментариев
-        status: planned
+        status: done
         outputs:
           - specs/TK-004.md
       - id: TK-004/BE
@@ -170,7 +170,7 @@ tasks:
   - id: TK-005
     title: Список инициатив — фильтры и сортировка по весу
     order: 50
-    status: planned
+    status: spec-prepared
     frRefs: [FR5]
     context:
       prd: "docs/prd.md#FR5.-Список-инициатив-фильтры-и-сортировка"
@@ -191,9 +191,9 @@ tasks:
       - id: TK-005/AN
         role: AN
         title: Спецификация списка и фильтров
-        status: planned
+        status: done
         outputs:
-          - specs/TK-005.md
+          - docs/specs/TK-005.md
       - id: TK-005/BE
         role: BE
         title: Эндпоинт GET /initiatives с фильтрами/сортировкой
@@ -210,7 +210,7 @@ tasks:
   - id: TK-006
     title: Назначение ответственного
     order: 60
-    status: planned
+    status: spec-prepared
     frRefs: [FR4]
     context:
       prd: "docs/prd.md#FR4.-Назначение-ответственного"
@@ -231,7 +231,7 @@ tasks:
       - id: TK-006/AN
         role: AN
         title: Спецификация назначения ответственного
-        status: planned
+        status: done
         outputs:
           - specs/TK-006.md
       - id: TK-006/BE

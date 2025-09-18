@@ -45,7 +45,7 @@ services:
       context: ../app/frontend
       dockerfile: Dockerfile
       args:
-        VITE_API_BASE: ${VITE_API_BASE:-/api/v1}
+        VITE_API_BASE: ${VITE_API_BASE:-/api}
     container_name: ideaframe-frontend
     expose:
       - "80"
