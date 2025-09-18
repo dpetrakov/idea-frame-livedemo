@@ -1,0 +1,32 @@
+{
+    email {$CADDY_EMAIL}
+}
+
+{$APP_URL} {
+    encode gzip
+
+    # Прокси для API запросов
+    handle /api/* {
+        reverse_proxy backend:8080
+    }
+
+    # Статические файлы фронтенда
+    handle {
+        reverse_proxy frontend:3000
+    }
+
+    # Заголовки безопасности
+    header {
+        Strict-Transport-Security max-age=31536000
+        X-Content-Type-Options nosniff
+        X-Frame-Options DENY
+        X-XSS-Protection "1; mode=block"
+        Referrer-Policy strict-origin-when-cross-origin
+    }
+
+    # Логирование
+    log {
+        output stdout
+        format json
+    }
+}

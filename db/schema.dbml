@@ -1,0 +1,89 @@
+// Database schema for "Idea Frame Livedemo" - система фрейминга портфеля инициатив
+// Логическая модель данных на основе PRD и архитектуры
+// Поддерживает создание инициатив, оценку по шкалам, комментарии, назначение ответственных
+
+Project IdeaFrameLivedemo {
+  database_type: 'PostgreSQL'
+  Note: '''
+  Система фрейминга портфеля инициатив
+  - Создание и оценка инициатив по шкалам ценность/скорость/стоимость
+  - Комментарии в формате чата
+  - Назначение ответственных
+  - Фильтрация и сортировка по весу
+  '''
+}
+
+// Пользователи системы
+Table users {
+  id uuid [pk, default: `gen_random_uuid()`]
+  login varchar(32) [not null, unique]
+  display_name varchar(32) [not null]
+  password_hash varchar(255) [not null]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+
+  Note: 'Пользователи системы с упрощённой регистрацией'
+  
+  Indexes {
+    login [unique, name: 'idx_users_login']
+    created_at [name: 'idx_users_created_at']
+  }
+}
+
+// Инициативы (основная сущность)
+Table initiatives {
+  id uuid [pk, default: `gen_random_uuid()`]
+  title varchar(140) [not null]
+  description text
+  author_id uuid [not null, ref: > users.id]
+  assignee_id uuid [ref: > users.id]
+  value smallint [note: 'Ценность 1-5']
+  speed smallint [note: 'Скорость реализации 1-5']
+  cost smallint [note: 'Стоимость 1-5']
+  weight numeric(5,2) [not null, default: 0]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+
+  Note: '''
+  Инициативы с атрибутами оценки и вычисляемым весом.
+  Формула веса: round((0.5*value + 0.3*speed - 0.2*cost) / 1.0, 2)
+  '''
+
+  Indexes {
+    (weight, created_at) [name: 'idx_initiatives_weight_created', note: 'DESC order for weight, then created_at DESC']
+    author_id [name: 'idx_initiatives_author']
+    assignee_id [name: 'idx_initiatives_assignee']
+    created_at [name: 'idx_initiatives_created_at']
+  }
+}
+
+// Комментарии к инициативам (формат чата)
+Table comments {
+  id uuid [pk, default: `gen_random_uuid()`]
+  initiative_id uuid [not null, ref: > initiatives.id]
+  author_id uuid [not null, ref: > users.id]
+  text varchar(1000) [not null]
+  created_at timestamptz [not null, default: `now()`]
+
+  Note: 'Комментарии к инициативам в формате чата'
+
+  Indexes {
+    (initiative_id, created_at) [name: 'idx_comments_initiative_created']
+    author_id [name: 'idx_comments_author']
+  }
+}
+
+// Ограничения данных описаны в комментариях к полям выше
+// Будут реализованы как CHECK constraints в SQL миграциях:
+// - value, speed, cost: диапазон 1-5 или NULL
+// - login: длина 3-32 символа
+// - display_name: длина 1-32 символа  
+// - title: длина 1-140 символов
+// - description: длина до 10000 символов или NULL
+// - text: длина 1-1000 символов
+
+// Связи между таблицами
+Ref: initiatives.author_id > users.id [delete: restrict, update: restrict]
+Ref: initiatives.assignee_id > users.id [delete: set null, update: restrict]
+Ref: comments.initiative_id > initiatives.id [delete: cascade, update: restrict]
+Ref: comments.author_id > users.id [delete: restrict, update: restrict]
