@@ -37,11 +37,17 @@ type InitiativeCreate struct {
 }
 
 // InitiativeUpdate represents data for updating an initiative
+// Note: AssigneeID is tri-state (missing / null / uuid) via OptionalUUID
+// to support explicit unassign (null) vs not provided
+// Other numeric fields use *int and do not currently distinguish null vs missing
+// per TK-003 requirements.
 type InitiativeUpdate struct {
-	Value      *int       `json:"value"`
-	Speed      *int       `json:"speed"`
-	Cost       *int       `json:"cost"`
-	AssigneeID *uuid.UUID `json:"assigneeId"`
+	Title       *string      `json:"title"`
+	Description *string      `json:"description"`
+	Value       *int         `json:"value"`
+	Speed       *int         `json:"speed"`
+	Cost        *int         `json:"cost"`
+	AssigneeID  OptionalUUID `json:"assigneeId"`
 }
 
 // Validate validates initiative creation data
@@ -65,6 +71,24 @@ func (ic *InitiativeCreate) Validate() error {
 
 // Validate validates initiative update data
 func (iu *InitiativeUpdate) Validate() error {
+	// Title validation (1-140) if provided
+	if iu.Title != nil {
+		trimmed := strings.TrimSpace(*iu.Title)
+		if trimmed == "" {
+			return errors.New("title must not be empty")
+		}
+		if utf8.RuneCountInString(trimmed) > 140 {
+			return errors.New("title must not exceed 140 characters")
+		}
+	}
+
+	// Description validation (<= 10000) if provided
+	if iu.Description != nil {
+		if utf8.RuneCountInString(*iu.Description) > 10000 {
+			return errors.New("description must not exceed 10000 characters")
+		}
+	}
+
 	// Value validation (1-5 or null)
 	if iu.Value != nil && (*iu.Value < 1 || *iu.Value > 5) {
 		return errors.New("value must be between 1 and 5")

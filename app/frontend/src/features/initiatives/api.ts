@@ -6,7 +6,8 @@ import type {
   Initiative, 
   InitiativeCreate, 
   InitiativeUpdate,
-  InitiativesList 
+  InitiativesList,
+  UserBrief 
 } from './types';
 
 /**
@@ -72,6 +73,33 @@ export async function getInitiativesList(params?: {
     method: 'GET',
   });
   return response;
+}
+
+/**
+ * Получение списка пользователей (для выбора ответственного)
+ * GET /v1/users
+ */
+export async function getUsers(): Promise<UserBrief[]> {
+  return api<UserBrief[]>('/v1/users', { method: 'GET' });
+}
+
+/**
+ * Комментарии к инициативе
+ */
+export async function getComments(initiativeId: string, params?: { limit?: number; offset?: number; }): Promise<import('./types').CommentsList> {
+  const searchParams = new URLSearchParams();
+  if (params?.limit !== undefined) searchParams.append('limit', String(params.limit));
+  if (params?.offset !== undefined) searchParams.append('offset', String(params.offset));
+  const qs = searchParams.toString();
+  const url = qs ? `/v1/initiatives/${initiativeId}/comments?${qs}` : `/v1/initiatives/${initiativeId}/comments`;
+  return api(url, { method: 'GET' });
+}
+
+export async function addComment(initiativeId: string, text: string): Promise<import('./types').Comment> {
+  return api(`/v1/initiatives/${initiativeId}/comments`, {
+    method: 'POST',
+    body: JSON.stringify({ text }),
+  });
 }
 
 // Utility functions для валидации

@@ -3,7 +3,7 @@
 
 import React from 'react';
 import { Card } from '../../../shared/ui/Card';
-import { renderMarkdown } from '../../../shared/lib/markdown';
+import { renderMarkdown, truncateText } from '../../../shared/lib/markdown';
 import type { Initiative } from '../types';
 
 interface InitiativeCardProps {
@@ -250,21 +250,21 @@ export function InitiativeCard({ initiative, showFullDescription = true, onEdit 
 
       {/* Краткое описание для списков */}
       {initiative.description && !showFullDescription && (
-        <div>
-          <p style={{ 
+        <div
+          dangerouslySetInnerHTML={{ 
+            __html: renderMarkdown(truncateText(initiative.description || '', 300))
+          }}
+          style={{ 
             margin: 0, 
             color: 'var(--color-text-muted)', 
             fontSize: 'var(--fs-md)',
-            lineHeight: 1.4,
+            lineHeight: 1.5,
             overflow: 'hidden',
             display: '-webkit-box',
             WebkitLineClamp: 3,
             WebkitBoxOrient: 'vertical',
-          }}>
-            {initiative.description.slice(0, 200)}
-            {initiative.description.length > 200 && '...'}
-          </p>
-        </div>
+          } as React.CSSProperties}
+        />
       )}
       
       {/* Кнопка редактирования (если доступна) */}

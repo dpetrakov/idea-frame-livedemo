@@ -24,15 +24,19 @@ func NewRouter(
 	
 	// Создаём репозитории
 	initiativeRepo := repo.NewInitiativeRepository(db.Pool, logger)
+	commentRepo := repo.NewCommentRepository(db.Pool, logger)
 	
 	// Создаём сервисы
 	authService := service.NewAuthService(db, cfg.JWTSecret, cfg.JWTExpiration)
-	initiativeService := service.NewInitiativeService(initiativeRepo, logger)
+	userRepo := repo.NewUserRepository(db)
+	initiativeService := service.NewInitiativeService(initiativeRepo, userRepo, logger)
+	commentService := service.NewCommentService(commentRepo, initiativeRepo, logger)
 	
 	// Создаём handlers
 	authHandler := handlers.NewAuthHandler(authService)
 	healthHandler := handlers.NewHealthHandler(db)
 	initiativeHandler := handlers.NewInitiativeHandlers(initiativeService)
+	commentHandler := handlers.NewCommentHandlers(commentService)
 	
 	// Глобальные middleware
 	r.Use(middleware.RequestID)
@@ -68,6 +72,9 @@ func NewRouter(
 				r.Post("/", initiativeHandler.CreateInitiative)     // POST /initiatives - создание
 				r.Get("/{id}", initiativeHandler.GetInitiative)     // GET /initiatives/{id} - детали
 				r.Patch("/{id}", initiativeHandler.UpdateInitiative) // PATCH /initiatives/{id} - обновление (подготовка к TK-003, TK-006)
+				// Комментарии к инициативе (TK-004)
+				r.Get("/{id}/comments", commentHandler.ListComments)
+				r.Post("/{id}/comments", commentHandler.CreateComment)
 			})
 		})
 	})

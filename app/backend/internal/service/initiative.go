@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 
@@ -14,13 +16,15 @@ import (
 // InitiativeService handles initiative business logic
 type InitiativeService struct {
 	initiativeRepo *repo.InitiativeRepository
+	userRepo       *repo.UserRepository
 	logger         *slog.Logger
 }
 
 // NewInitiativeService creates new initiative service
-func NewInitiativeService(initiativeRepo *repo.InitiativeRepository, logger *slog.Logger) *InitiativeService {
+func NewInitiativeService(initiativeRepo *repo.InitiativeRepository, userRepo *repo.UserRepository, logger *slog.Logger) *InitiativeService {
 	return &InitiativeService{
 		initiativeRepo: initiativeRepo,
+		userRepo:       userRepo,
 		logger:         logger,
 	}
 }
@@ -72,8 +76,25 @@ func (s *InitiativeService) GetInitiativeByID(ctx context.Context, id uuid.UUID,
 	return initiative, nil
 }
 
-// UpdateInitiative updates initiative attributes (TK-003) and will handle assignee in TK-006
+// UpdateInitiative updates initiative attributes (TK-003) and assignee (TK-006)
 func (s *InitiativeService) UpdateInitiative(ctx context.Context, id uuid.UUID, updates *domain.InitiativeUpdate, userID uuid.UUID) (*domain.Initiative, error) {
+	// Валидация названия/описания
+	if updates.Title != nil {
+		trimmed := strings.TrimSpace(*updates.Title)
+		if trimmed == "" {
+			return nil, domain.ErrInvalidField("title", "must not be empty")
+		}
+		if utf8.RuneCountInString(trimmed) > 140 {
+			return nil, domain.ErrInvalidField("title", "must not exceed 140 characters")
+		}
+		*updates.Title = trimmed
+	}
+	if updates.Description != nil {
+		if utf8.RuneCountInString(*updates.Description) > 10000 {
+			return nil, domain.ErrInvalidField("description", "must not exceed 10000 characters")
+		}
+	}
+
 	// Валидация атрибутов (1-5 или null). Возвращаем доменную ошибку валидации
 	if updates.Value != nil && (*updates.Value < 1 || *updates.Value > 5) {
 		return nil, domain.ErrInvalidField("value", "must be between 1 and 5")
@@ -91,8 +112,37 @@ func (s *InitiativeService) UpdateInitiative(ctx context.Context, id uuid.UUID, 
 		return nil, err
 	}
 
+	// Обработка assigneeId (валидация формата и существования пользователя)
+	var newAssigneeID *uuid.UUID
+	if updates.AssigneeID.Present {
+		if updates.AssigneeID.Null {
+			newAssigneeID = nil // снятие назначения
+		} else {
+			if !updates.AssigneeID.Valid {
+				return nil, domain.ErrInvalidField("assigneeId", "invalid uuid")
+			}
+			// проверим существование пользователя
+			u, err := s.userRepo.GetByID(ctx, updates.AssigneeID.Value)
+			if err != nil {
+				if err == domain.ErrNotFound || err == domain.ErrUserNotFound {
+					return nil, domain.ErrInvalidField("assigneeId", "unknown user")
+				}
+				return nil, fmt.Errorf("check user exists: %w", err)
+			}
+			if u == nil {
+				return nil, domain.ErrInvalidField("assigneeId", "unknown user")
+			}
+			// копируем для логов
+			idCopy := updates.AssigneeID.Value
+			newAssigneeID = &idCopy
+		}
+	}
+
 	// Если нет изменений — no-op, возвращаем текущую
-	if updates.Value == nil && updates.Speed == nil && updates.Cost == nil && updates.AssigneeID == nil {
+noAssigneeChange := !updates.AssigneeID.Present
+	noTitle := updates.Title == nil
+	noDesc := updates.Description == nil
+	if noTitle && noDesc && updates.Value == nil && updates.Speed == nil && updates.Cost == nil && noAssigneeChange {
 		s.logger.Info("initiative update: no changes provided", "id", id, "userID", userID)
 		return current, nil
 	}
@@ -107,10 +157,27 @@ func (s *InitiativeService) UpdateInitiative(ctx context.Context, id uuid.UUID, 
 	}
 
 	// Логируем изменённые поля и новый вес
-	changed := make([]string, 0, 3)
+changed := make([]string, 0, 6)
+	if updates.Title != nil { changed = append(changed, "title") }
+	if updates.Description != nil { changed = append(changed, "description") }
 	if updates.Value != nil { changed = append(changed, "value") }
 	if updates.Speed != nil { changed = append(changed, "speed") }
 	if updates.Cost != nil { changed = append(changed, "cost") }
+	if updates.AssigneeID.Present { changed = append(changed, "assigneeId") }
+
+	// Лог смены ответственного
+	if updates.AssigneeID.Present {
+		var oldID, newID string
+		if current.AssigneeID != nil { oldID = current.AssigneeID.String() } else { oldID = "null" }
+		if newAssigneeID != nil { newID = newAssigneeID.String() } else { newID = "null" }
+		s.logger.Info("assignee changed",
+			"initiativeId", id,
+			"oldAssigneeId", oldID,
+			"newAssigneeId", newID,
+			"actorId", userID,
+		)
+	}
+
 	s.logger.Info("initiative updated",
 		"id", id,
 		"userID", userID,
@@ -121,10 +188,28 @@ func (s *InitiativeService) UpdateInitiative(ctx context.Context, id uuid.UUID, 
 	return updated, nil
 }
 
-// ListInitiatives returns initiatives list (prepared for TK-005)
+// ListInitiatives returns initiatives list (TK-005)
 func (s *InitiativeService) ListInitiatives(ctx context.Context, filter string, limit, offset int, userID uuid.UUID) ([]*domain.Initiative, int, error) {
-	// This method is prepared for TK-005 but not implemented in TK-002
-	// For now, return empty list
-	s.logger.Info("initiative list requested (not implemented in TK-002)", "filter", filter, "userID", userID)
-	return []*domain.Initiative{}, 0, nil
+	// Нормализация параметров
+	switch filter {
+	case "mineCreated", "assignedToMe", "all":
+		// ok
+	default:
+		filter = "all"
+	}
+	if limit <= 0 {
+		limit = 20
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
+	items, total, err := s.initiativeRepo.List(ctx, filter, limit, offset, userID)
+	if err != nil {
+		return nil, 0, fmt.Errorf("list initiatives: %w", err)
+	}
+	return items, total, nil
 }

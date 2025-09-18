@@ -28,6 +28,8 @@ export interface InitiativeCreate {
 }
 
 export interface InitiativeUpdate {
+  title?: string;             // 1-140 символов
+  description?: string | null; // до 10000 символов, можно пустую строку
   value?: number | null;      // 1-5 или null
   speed?: number | null;      // 1-5 или null  
   cost?: number | null;       // 1-5 или null
@@ -36,6 +38,21 @@ export interface InitiativeUpdate {
 
 export interface InitiativesList {
   items: Initiative[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+// Комментарии
+export interface Comment {
+  id: string;
+  text: string;
+  author: UserBrief;
+  createdAt: string;
+}
+
+export interface CommentsList {
+  items: Comment[];
   total: number;
   limit: number;
   offset: number;

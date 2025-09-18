@@ -130,7 +130,7 @@ tasks:
   - id: TK-004
     title: Комментарии к инициативам (чат‑лента)
     order: 40
-    status: spec-prepared
+    status: done
     frRefs: [FR2]
     context:
       prd: "docs/prd.md#FR2.-Комментарии-в-формате-чата"
@@ -140,13 +140,13 @@ tasks:
       deployment: "docs/deployment.md#health-проверки"
     acceptanceCriteria:
       - text: "POST /initiatives/{id}/comments создаёт комментарий; валидации 1–1000 символов"
-        done: false
+        done: true
       - text: "GET /initiatives/{id}/comments возвращает хронологический список"
-        done: false
+        done: true
       - text: "Фронтенд блокирует отправку пустых сообщений"
-        done: false
+        done: true
       - text: "Индикаторы загрузки/ошибок присутствуют"
-        done: false
+        done: true
     subtasks:
       - id: TK-004/AN
         role: AN
@@ -157,20 +157,20 @@ tasks:
       - id: TK-004/BE
         role: BE
         title: Эндпоинты комментариев и связи в БД
-        status: planned
+        status: done
       - id: TK-004/FE
         role: FE
         title: UI чата с отправкой и списком
-        status: planned
+        status: done
       - id: TK-004/DV
         role: DV
         title: Миграции для comments и индексы
-        status: planned
+        status: done
 
   - id: TK-005
     title: Список инициатив — фильтры и сортировка по весу
     order: 50
-    status: spec-prepared
+    status: done
     frRefs: [FR5]
     context:
       prd: "docs/prd.md#FR5.-Список-инициатив-фильтры-и-сортировка"
@@ -180,13 +180,13 @@ tasks:
       deployment: "docs/deployment.md#мониторинг-и-метрики"
     acceptanceCriteria:
       - text: "GET /initiatives поддерживает filter=all|mineCreated|assignedToMe и пагинацию"
-        done: false
+        done: true
       - text: "Сортировка: weight desc, затем createdAt desc"
-        done: false
+        done: true
       - text: "Фронтенд — табы фильтров, стабильная сортировка, скелетоны"
-        done: false
+        done: true
       - text: "Индексы в БД под запросы списка"
-        done: false
+        done: true
     subtasks:
       - id: TK-005/AN
         role: AN
@@ -197,20 +197,20 @@ tasks:
       - id: TK-005/BE
         role: BE
         title: Эндпоинт GET /initiatives с фильтрами/сортировкой
-        status: planned
+        status: done
       - id: TK-005/FE
         role: FE
         title: Экран списка с фильтрами и пагинацией
-        status: planned
+        status: done
       - id: TK-005/DV
         role: DV
         title: Поддержка индексов и профилирование запросов
-        status: planned
+        status: done
 
   - id: TK-006
     title: Назначение ответственного
     order: 60
-    status: spec-prepared
+    status: done
     frRefs: [FR4]
     context:
       prd: "docs/prd.md#FR4.-Назначение-ответственного"
@@ -220,13 +220,13 @@ tasks:
       deployment: "docs/deployment.md#переменные-окружения"
     acceptanceCriteria:
       - text: "PATCH /initiatives/{id} поддерживает assigneeId (uuid|null)"
-        done: false
+        done: true
       - text: "Фронтенд — селект пользователя и возможность снять назначение"
-        done: false
+        done: true
       - text: "OpenAPI/DBML синхронизированы по полю assignee"
-        done: false
+        done: true
       - text: "Покрыты ошибки и UX‑состояния"
-        done: false
+        done: true
     subtasks:
       - id: TK-006/AN
         role: AN
@@ -237,12 +237,12 @@ tasks:
       - id: TK-006/BE
         role: BE
         title: Обновление assignee и возврат карточки
-        status: planned
+        status: done
       - id: TK-006/FE
         role: FE
         title: UI выбора ответственного
-        status: planned
+        status: done
       - id: TK-006/DV
         role: DV
         title: Индексы и нагрузочное тестирование запроса списка
-        status: planned
+        status: done

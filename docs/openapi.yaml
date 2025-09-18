@@ -303,7 +303,7 @@ paths:
 
     patch:
       summary: "Обновление инициативы"
-      description: "Обновление полей инициативы (атрибуты оценки, назначение ответственного)"
+      description: "Обновление полей инициативы (название, описание, атрибуты оценки, назначение ответственного)"
       tags: ["Initiatives"]
       parameters:
         - name: id
@@ -321,6 +321,8 @@ paths:
             schema:
               $ref: '#/components/schemas/InitiativeUpdate'
             example:
+              title: "Бот для triage идей — обновлено"
+              description: "Обновлённое описание"
               value: 5
               speed: 4
               cost: 2
@@ -664,6 +666,18 @@ components:
     InitiativeUpdate:
       type: object
       properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 140
+          description: "Название инициативы"
+          example: "Бот для triage идей"
+        description:
+          type: string
+          maxLength: 10000
+          nullable: true
+          description: "Описание в формате Markdown"
+          example: "# Описание\n\nАвтоматизация первичной обработки идей"
         value:
           type: integer
           minimum: 1

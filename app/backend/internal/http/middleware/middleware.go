@@ -49,6 +49,21 @@ func RespondWithError(w http.ResponseWriter, r *http.Request, code int, message 
 	json.NewEncoder(w).Encode(response)
 }
 
+// RespondWithErrorDetails отправляет JSON ошибку с details
+func RespondWithErrorDetails(w http.ResponseWriter, r *http.Request, code int, message string, errCode string, details interface{}) {
+	response := ErrorResponse{
+		Code:    errCode,
+		Message: message,
+		Details: details,
+	}
+	if reqID := r.Context().Value(RequestIDKey); reqID != nil {
+		response.CorrelationID = reqID.(string)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	json.NewEncoder(w).Encode(response)
+}
+
 // RequestID добавляет уникальный ID запроса
 func RequestID(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

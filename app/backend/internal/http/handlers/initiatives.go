@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -124,7 +125,7 @@ func (h *InitiativeHandlers) GetInitiative(w http.ResponseWriter, r *http.Reques
 	json.NewEncoder(w).Encode(initiative)
 }
 
-// UpdateInitiative handles PATCH /initiatives/{id} (prepared for TK-003 and TK-006)
+// UpdateInitiative handles PATCH /initiatives/{id} (TK-003, TK-006)
 func (h *InitiativeHandlers) UpdateInitiative(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	logger := telemetry.LoggerFromContext(ctx)
@@ -161,7 +162,7 @@ func (h *InitiativeHandlers) UpdateInitiative(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	// Update initiative (not implemented in TK-002, just returns existing data)
+	// Update initiative
 	initiative, err := h.initiativeService.UpdateInitiative(ctx, initiativeID, &updates, userID)
 	if err != nil {
 		if errors.Is(err, domain.ErrInitiativeNotFound) {
@@ -172,7 +173,12 @@ func (h *InitiativeHandlers) UpdateInitiative(w http.ResponseWriter, r *http.Req
 		var vErr domain.ValidationError
 		if errors.As(err, &vErr) {
 			logger.Warn("validation error updating initiative", "error", vErr, "id", initiativeID, "requestId", requestID)
-			writeErrorResponse(w, requestID, http.StatusBadRequest, "VALIDATION_ERROR", vErr.Error())
+			// details с указанием поля
+			details := map[string]string{}
+			if vErr.Field != "" {
+				details[vErr.Field] = vErr.Message
+			}
+			middleware.RespondWithErrorDetails(w, r, http.StatusBadRequest, vErr.Error(), "VALIDATION_ERROR", details)
 			return
 		}
 		
@@ -190,7 +196,7 @@ func (h *InitiativeHandlers) UpdateInitiative(w http.ResponseWriter, r *http.Req
 	json.NewEncoder(w).Encode(initiative)
 }
 
-// ListInitiatives handles GET /initiatives (prepared for TK-005)
+// ListInitiatives handles GET /initiatives (TK-005)
 func (h *InitiativeHandlers) ListInitiatives(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	logger := telemetry.LoggerFromContext(ctx)
@@ -204,22 +210,53 @@ func (h *InitiativeHandlers) ListInitiatives(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	// This endpoint is prepared for TK-005 but not implemented in TK-002
-	// For now, return empty list
-	logger.Info("initiative list requested (not implemented in TK-002)", "userID", userID, "requestId", requestID)
-
-	// Return empty list structure according to OpenAPI spec
-	emptyResponse := map[string]interface{}{
-		"items":  []interface{}{},
-		"total":  0,
-		"limit":  20,
-		"offset": 0,
+	// Parse query params
+	q := r.URL.Query()
+	filter := q.Get("filter")
+	if filter == "" {
+		filter = "all"
 	}
+	limit := 20
+	if v := q.Get("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			limit = n
+		}
+	}
+	offset := 0
+	if v := q.Get("offset"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			offset = n
+		}
+	}
+
+	items, total, err := h.initiativeService.ListInitiatives(ctx, filter, limit, offset, userID)
+	if err != nil {
+		logger.Error("failed to list initiatives", "error", err, "requestId", requestID)
+		writeErrorResponse(w, requestID, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to list initiatives")
+		return
+	}
+
+	resp := map[string]interface{}{
+		"items":  items,
+		"total":  total,
+		"limit":  limit,
+		"offset": offset,
+	}
+
+	// Логируем основные параметры запроса списка
+	logger.Info("initiatives_list",
+		"filter", filter,
+		"limit", limit,
+		"offset", offset,
+		"userID", userID,
+		"count", len(items),
+		"requestId", requestID,
+	)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("X-Request-ID", requestID)
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(emptyResponse)
+	json.NewEncoder(w).Encode(resp)
 }
 
 // writeErrorResponse writes standardized error response according to OpenAPI spec
