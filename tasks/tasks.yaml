@@ -10,7 +10,7 @@ tasks:
   - id: TK-001
     title: Пользователи и аутентификация (JWT 24h)
     order: 10
-    status: pec-prepared
+    status: done
     frRefs: [FR6]
     context:
       prd: "docs/prd.md#6.-Регистрация-и-вход"
@@ -22,11 +22,11 @@ tasks:
       - text: "В OpenAPI описаны /auth/register, /auth/login, /users/me; security bearer JWT 24h"
         done: true
       - text: "В DBML есть таблица users со строго перечисленными полями"
-        done: false
+        done: true
       - text: "Бэкенд реализует регистрацию, логин и /users/me; соответствует OpenAPI"
-        done: false
+        done: true
       - text: "Health /api/health возвращает 200 при локальном запуске docker-compose"
-        done: false
+        done: true
     subtasks:
       - id: TK-001/AN
         role: AN
@@ -37,15 +37,15 @@ tasks:
       - id: TK-001/BE
         role: BE
         title: Реализация backend аутентификации
-        status: planned
+        status: done
       - id: TK-001/FE
         role: FE
         title: Форма логина и состояние профиля
-        status: planned
+        status: done
       - id: TK-001/DV
         role: DV
         title: Переменные окружения JWT и прокси в Caddy
-        status: planned
+        status: done
 
   - id: TK-002
     title: Инициативы — создание и просмотр карточки

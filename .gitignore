@@ -1,0 +1,40 @@
+# System files
+.DS_Store
+Thumbs.db
+
+# Environment and secrets
+.env
+!.env.example
+
+# Backend artifacts
+app/backend/bin/
+app/backend/dist/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Frontend artifacts
+app/frontend/node_modules/
+app/frontend/dist/
+app/frontend/build/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Test coverage
+coverage.out
+*.test
+*.prof
+
+# Logs
+*.log
+
+# Docker volumes (local)
+postgres-data/
+caddy-data/
+caddy-config/
