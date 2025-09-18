@@ -27,13 +27,19 @@ alwaysApply: false
   - `app/frontend/Dockerfile`  
 - **Миграции PostgreSQL** выполняются **автоматически при каждом старте бэкенда** с помощью **golang-migrate**, встроенного в образ бэкенда (entrypoint запускает миграции и затем приложение).
 
+### TLS/HTTPS (обязательные требования)
+- **Всегда HTTPS**: весь трафик обслуживается по HTTPS, HTTP → HTTPS жёсткий редирект.
+- **Production**: автоматический выпуск реальных сертификатов через ACME (Let's Encrypt).
+- **Development (localhost)**: использовать самоподписанные сертификаты через внутренний CA Caddy (`tls internal`). Для `*.localhost` это происходит автоматически при включённом `auto_https` — дополнительных правок конфигов не требуется.
+- **Только `.env` меняется между окружениями**. Конфигурационные файлы (`infra/caddy/Caddyfile`, `infra/docker-compose.yml`) едины для prod и dev.
+
 ---
 
 ## 2. .env (переменные окружения)
 
 ```
-APP_URL=                 # целевой URL (например, app.example.com)
-CADDY_EMAIL=             # e-mail для TLS
+APP_URL=                 # Prod: app.example.com ; Dev: app.localhost
+CADDY_EMAIL=             # E-mail для ACME в prod; в dev можно оставить пустым
 JWT_SECRET=
 POSTGRES_USER=
 POSTGRES_PASSWORD=
@@ -74,21 +80,43 @@ FRONTEND_PORT=3000
 
 ```
 {
+  # Глобальные настройки
+  auto_https on
   email {$CADDY_EMAIL}
 }
 
 {$APP_URL} {
+  # Заголовки безопасности
+  header {
+    Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+    X-Content-Type-Options "nosniff"
+    X-Frame-Options "DENY"
+    Referrer-Policy "strict-origin-when-cross-origin"
+    # Базовая CSP (адаптируйте при необходимости под фронтенд)
+    Content-Security-Policy "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' https://{host} wss://{host}; frame-ancestors 'none'"
+  }
+
   encode gzip
+
   @api path /api/*
   handle @api {
-    reverse_proxy backend:${BACKEND_PORT}
+    reverse_proxy backend:{$BACKEND_PORT}
   }
 
   handle {
-    reverse_proxy frontend:${FRONTEND_PORT}
+    reverse_proxy frontend:{$FRONTEND_PORT}
   }
 }
+
+# Принудительный редирект HTTP → HTTPS
+http://{$APP_URL} {
+  redir https://{$APP_URL}{uri}
+}
 ```
+
+### HTTPS режимы: Production и Development
+- **Prod (домен)**: укажите в `.env` `APP_URL` = реальный FQDN (например, `app.example.com`) и `CADDY_EMAIL`. Убедитесь, что DNS A/AAAA указывает на сервер и открыты порты `80` и `443`. Caddy автоматически выпустит и продлит валидный сертификат.
+- **Dev (localhost)**: укажите `APP_URL=app.localhost`. При включённом `auto_https on` Caddy автоматически использует внутренний CA (**эквивалентно `tls internal`**) и выдаёт самоподписанный сертификат, доверенный локальной системе Caddy. Конфиги менять не нужно; достаточно различий в `.env`.
 
 > Если `APP_URL` не указан во входных данных — **запросить его и остановить генерацию** стратегии.
 
@@ -177,10 +205,15 @@ EXPOSE 3000
 
 ## 8. Чек‑лист
 
-- [ ] `APP_URL` указан явно.  
-- [ ] Все секреты и URL — только в `.env`.  
-- [ ] В `backend` встроен `migrate` и запускается перед приложением. При ошибке миграции контейнер падает.  
-- [ ] `Caddyfile` проксирует `/api/*` на `backend`, остальное — на `frontend`.  
-- [ ] Healthchecks настроены; smoketest добавлен в `docs/deployment.md`.  
-- [ ] Образы собираются из локальных Dockerfile.
+ - [ ] `APP_URL` указан явно.  
+ - [ ] Все секреты и URL — только в `.env`.  
+ - [ ] В `backend` встроен `migrate` и запускается перед приложением. При ошибке миграции контейнер падает.  
+ - [ ] `Caddyfile` проксирует `/api/*` на `backend`, остальное — на `frontend`.  
+ - [ ] Healthchecks настроены; smoketest добавлен в `docs/deployment.md`.  
+ - [ ] Образы собираются из локальных Dockerfile.
+ - [ ] Включён жёсткий редирект HTTP → HTTPS.  
+ - [ ] Заголовки безопасности выставляются (HSTS, CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy).  
+ - [ ] Prod: указан `CADDY_EMAIL`, сертификат выпускается автоматически.  
+ - [ ] Dev: используется `APP_URL=app.localhost`, Caddy выдаёт самоподписанный сертификат через внутренний CA.  
+ - [ ] Между prod и dev отличаются только значения в `.env`; конфиги не меняются.
 
