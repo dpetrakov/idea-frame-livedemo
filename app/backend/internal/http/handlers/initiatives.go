@@ -169,13 +169,19 @@ func (h *InitiativeHandlers) UpdateInitiative(w http.ResponseWriter, r *http.Req
 			writeErrorResponse(w, requestID, http.StatusNotFound, "NOT_FOUND", "Initiative not found")
 			return
 		}
+		var vErr domain.ValidationError
+		if errors.As(err, &vErr) {
+			logger.Warn("validation error updating initiative", "error", vErr, "id", initiativeID, "requestId", requestID)
+			writeErrorResponse(w, requestID, http.StatusBadRequest, "VALIDATION_ERROR", vErr.Error())
+			return
+		}
 		
 		logger.Error("failed to update initiative", "error", err, "id", initiativeID, "requestId", requestID)
 		writeErrorResponse(w, requestID, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to update initiative")
 		return
 	}
 
-	logger.Info("initiative update requested", "id", initiativeID, "userID", userID, "requestId", requestID)
+	logger.Info("initiative updated", "id", initiativeID, "userID", userID, "requestId", requestID)
 
 	// Return updated initiative
 	w.Header().Set("Content-Type", "application/json")

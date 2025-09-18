@@ -72,25 +72,53 @@ func (s *InitiativeService) GetInitiativeByID(ctx context.Context, id uuid.UUID,
 	return initiative, nil
 }
 
-// UpdateInitiative updates initiative attributes (prepared for TK-003 and TK-006)
+// UpdateInitiative updates initiative attributes (TK-003) and will handle assignee in TK-006
 func (s *InitiativeService) UpdateInitiative(ctx context.Context, id uuid.UUID, updates *domain.InitiativeUpdate, userID uuid.UUID) (*domain.Initiative, error) {
-	// This method is prepared for TK-003 (attributes) and TK-006 (assignee) but not implemented in TK-002
-	// For now, validate input and return the initiative as is
-	if err := updates.Validate(); err != nil {
-		s.logger.Warn("invalid update data", "error", err, "id", id, "userID", userID)
-		return nil, fmt.Errorf("validation error: %w", err)
+	// Валидация атрибутов (1-5 или null). Возвращаем доменную ошибку валидации
+	if updates.Value != nil && (*updates.Value < 1 || *updates.Value > 5) {
+		return nil, domain.ErrInvalidField("value", "must be between 1 and 5")
+	}
+	if updates.Speed != nil && (*updates.Speed < 1 || *updates.Speed > 5) {
+		return nil, domain.ErrInvalidField("speed", "must be between 1 and 5")
+	}
+	if updates.Cost != nil && (*updates.Cost < 1 || *updates.Cost > 5) {
+		return nil, domain.ErrInvalidField("cost", "must be between 1 and 5")
 	}
 
-	// Get existing initiative to check access
-	initiative, err := s.GetInitiativeByID(ctx, id, userID)
+	// Получаем текущую инициативу и проверяем доступ
+	current, err := s.GetInitiativeByID(ctx, id, userID)
 	if err != nil {
 		return nil, err
 	}
 
-	// For TK-002, just return the existing initiative
-	// Full update logic will be implemented in TK-003 and TK-006
-	s.logger.Info("initiative update requested (not implemented in TK-002)", "id", id, "userID", userID)
-	return initiative, nil
+	// Если нет изменений — no-op, возвращаем текущую
+	if updates.Value == nil && updates.Speed == nil && updates.Cost == nil && updates.AssigneeID == nil {
+		s.logger.Info("initiative update: no changes provided", "id", id, "userID", userID)
+		return current, nil
+	}
+
+	// Обновляем через репозиторий (только переданные поля)
+	updated, err := s.initiativeRepo.Update(ctx, id, updates)
+	if err != nil {
+		if err == domain.ErrInitiativeNotFound {
+			return nil, domain.ErrInitiativeNotFound
+		}
+		return nil, fmt.Errorf("update initiative: %w", err)
+	}
+
+	// Логируем изменённые поля и новый вес
+	changed := make([]string, 0, 3)
+	if updates.Value != nil { changed = append(changed, "value") }
+	if updates.Speed != nil { changed = append(changed, "speed") }
+	if updates.Cost != nil { changed = append(changed, "cost") }
+	s.logger.Info("initiative updated",
+		"id", id,
+		"userID", userID,
+		"changed", changed,
+		"weight", updated.Weight,
+	)
+
+	return updated, nil
 }
 
 // ListInitiatives returns initiatives list (prepared for TK-005)

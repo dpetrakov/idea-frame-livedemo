@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -150,8 +151,46 @@ func (r *InitiativeRepository) GetByID(ctx context.Context, id uuid.UUID) (*doma
 
 // Update updates initiative fields (used for attributes and assignee updates in future tasks)
 func (r *InitiativeRepository) Update(ctx context.Context, id uuid.UUID, updates *domain.InitiativeUpdate) (*domain.Initiative, error) {
-	// This method is prepared for TK-003 and TK-006 but not implemented in TK-002
-	// For now, return the initiative as is
+	setParts := make([]string, 0, 3)
+	args := make([]interface{}, 0, 4)
+	idx := 1
+
+	if updates.Value != nil {
+		setParts = append(setParts, fmt.Sprintf("value = $%d", idx))
+		args = append(args, *updates.Value)
+		idx++
+	}
+	if updates.Speed != nil {
+		setParts = append(setParts, fmt.Sprintf("speed = $%d", idx))
+		args = append(args, *updates.Speed)
+		idx++
+	}
+	if updates.Cost != nil {
+		setParts = append(setParts, fmt.Sprintf("cost = $%d", idx))
+		args = append(args, *updates.Cost)
+		idx++
+	}
+
+	// TK-003: обновляем только атрибуты оценки. assignee будет реализован в TK-006
+
+	if len(setParts) == 0 {
+		// Нет изменений — возвращаем текущую запись
+		return r.GetByID(ctx, id)
+	}
+
+	query := fmt.Sprintf("UPDATE initiatives SET %s WHERE id = $%d", strings.Join(setParts, ", "), idx)
+	args = append(args, id)
+
+	ct, err := r.db.Exec(ctx, query, args...)
+	if err != nil {
+		r.logger.Error("failed to update initiative", "error", err, "id", id)
+		return nil, fmt.Errorf("update initiative: %w", err)
+	}
+	if ct.RowsAffected() == 0 {
+		return nil, domain.ErrInitiativeNotFound
+	}
+
+	// Возвращаем обновлённую запись с полями автора/ответственного
 	return r.GetByID(ctx, id)
 }
 

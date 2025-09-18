@@ -748,7 +748,7 @@ components:
         weight:
           type: number
           format: float
-          description: "Вычисляемый вес по формуле (0.5*value + 0.3*speed - 0.2*cost)"
+          description: "Вычисляемый вес по формуле: (0.5*value + 0.3*speed - 0.2*cost) / сумме коэффициентов только по присутствующим атрибутам; округление до 2 знаков; при отсутствии всех атрибутов = 0.0"
           example: 3.83
         commentsCount:
           type: integer

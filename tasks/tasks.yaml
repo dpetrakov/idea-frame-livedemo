@@ -90,7 +90,7 @@ tasks:
   - id: TK-003
     title: Атрибуты оценки и расчёт веса инициативы
     order: 30
-    status: spec-prepared
+    status: done
     frRefs: [FR3]
     context:
       prd: "docs/prd.md#FR3.-Атрибуты-оценки-инициативы-1–5"
@@ -100,13 +100,13 @@ tasks:
       deployment: "docs/deployment.md#мониторинг-и-метрики"
     acceptanceCriteria:
       - text: "PATCH /initiatives/{id} принимает value/speed/cost 1–5 и обновляет weight"
-        done: false
+        done: true
       - text: "Формула веса соответствует PRD (0.5*value + 0.3*speed − 0.2*cost)"
-        done: false
+        done: true
       - text: "В БД CHECK‑ограничения на диапазон 1–5 или NULL"
-        done: false
+        done: true
       - text: "Фронтенд обновляет вес на карточке после сохранения"
-        done: false
+        done: true
     subtasks:
       - id: TK-003/AN
         role: AN
@@ -117,15 +117,15 @@ tasks:
       - id: TK-003/BE
         role: BE
         title: Реализация обновления атрибутов и пересчёта веса
-        status: planned
+        status: done
       - id: TK-003/FE
         role: FE
         title: Контролы 1–5 и показ веса на карточке
-        status: planned
+        status: done
       - id: TK-003/DV
         role: DV
         title: Миграции CHECK ограничений
-        status: planned
+        status: done
 
   - id: TK-004
     title: Комментарии к инициативам (чат‑лента)

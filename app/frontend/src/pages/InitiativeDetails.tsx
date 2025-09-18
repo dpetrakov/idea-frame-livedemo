@@ -4,10 +4,10 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { InitiativeCard } from '../features/initiatives/components/InitiativeCard';
-import { getInitiativeById } from '../features/initiatives/api';
+import { getInitiativeById, updateInitiative } from '../features/initiatives/api';
 import { Card } from '../shared/ui/Card';
 import { Button } from '../shared/ui/Button';
-import type { Initiative, ApiError, LoadingState } from '../features/initiatives/types';
+import type { Initiative, ApiError, LoadingState, InitiativeUpdate } from '../features/initiatives/types';
 
 export function InitiativeDetails() {
   const { id } = useParams<{ id: string }>();
@@ -16,6 +16,14 @@ export function InitiativeDetails() {
   const [initiative, setInitiative] = useState<Initiative | null>(null);
   const [loadingState, setLoadingState] = useState<LoadingState>('idle');
   const [error, setError] = useState<string | null>(null);
+
+  // Черновик значений атрибутов для редактирования
+  const [draftValue, setDraftValue] = useState<number | null | undefined>(undefined);
+  const [draftSpeed, setDraftSpeed] = useState<number | null | undefined>(undefined);
+  const [draftCost, setDraftCost] = useState<number | null | undefined>(undefined);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
 
   useEffect(() => {
     if (!id) {
@@ -34,6 +42,10 @@ export function InitiativeDetails() {
     try {
       const data = await getInitiativeById(initiativeId);
       setInitiative(data);
+      // Инициализируем черновик текущими значениями
+      setDraftValue(data.value ?? null);
+      setDraftSpeed(data.speed ?? null);
+      setDraftCost(data.cost ?? null);
       setLoadingState('success');
     } catch (err) {
       console.error('Ошибка загрузки инициативы:', err);
@@ -69,11 +81,9 @@ export function InitiativeDetails() {
   };
 
   const handleEdit = () => {
-    if (initiative) {
-      // В будущих задачах (TK-003, TK-006) будет реализовано редактирование
-      console.log('Редактирование инициативы:', initiative.id);
-      alert('Редактирование будет реализовано в следующих версиях');
-    }
+    // Редактирование реализовано ниже как форма атрибутов
+    const el = document.getElementById('attributes-editor');
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
   // Состояние загрузки
@@ -177,6 +187,45 @@ export function InitiativeDetails() {
     return null;
   }
 
+  const isDirty = (
+    (initiative?.value ?? null) !== (draftValue ?? null) ||
+    (initiative?.speed ?? null) !== (draftSpeed ?? null) ||
+    (initiative?.cost ?? null) !== (draftCost ?? null)
+  );
+
+  const handleSave = async () => {
+    if (!initiative || !id) return;
+    setSaving(true);
+    setSaveError(null);
+    setSaved(false);
+
+    const payload: InitiativeUpdate = {};
+    if ((initiative.value ?? null) !== (draftValue ?? null)) payload.value = draftValue ?? null;
+    if ((initiative.speed ?? null) !== (draftSpeed ?? null)) payload.speed = draftSpeed ?? null;
+    if ((initiative.cost ?? null) !== (draftCost ?? null)) payload.cost = draftCost ?? null;
+
+    try {
+      const updated = await updateInitiative(id, payload);
+      setInitiative(updated);
+      setDraftValue(updated.value ?? null);
+      setDraftSpeed(updated.speed ?? null);
+      setDraftCost(updated.cost ?? null);
+      setSaved(true);
+    } catch (err) {
+      console.error('Ошибка сохранения инициативы:', err);
+      if (err && typeof err === 'object' && 'message' in err) {
+        const apiError = err as ApiError;
+        setSaveError(apiError.message || 'Ошибка сохранения');
+      } else if (err instanceof Error) {
+        setSaveError(err.message);
+      } else {
+        setSaveError('Произошла неожиданная ошибка');
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <div style={{
       maxWidth: '800px',
@@ -208,6 +257,77 @@ export function InitiativeDetails() {
           initiative={initiative} 
           showFullDescription={true}
         />
+
+        {/* Редактор атрибутов TK-003 */}
+        <section id="attributes-editor" style={{ marginTop: 'var(--space-6)' }}>
+          <Card style={{ padding: 'var(--space-4)' }}>
+            <h3 style={{ marginTop: 0, marginBottom: 'var(--space-4)' }}>Оценка инициативы</h3>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 'var(--space-4)' }}>
+              <div>
+                <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--color-text-muted)', marginBottom: 'var(--space-1)' }}>Ценность</div>
+                <select
+                  value={draftValue ?? ''}
+                  onChange={(e) => setDraftValue(e.target.value === '' ? null : Number(e.target.value))}
+                  style={{ width: '100%', padding: '10px', borderRadius: 'var(--radius)', border: '1px solid var(--color-border)' }}
+                >
+                  <option value="">—</option>
+                  {[1,2,3,4,5].map(v => <option key={v} value={v}>{v}</option>)}
+                </select>
+              </div>
+              <div>
+                <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--color-text-muted)', marginBottom: 'var(--space-1)' }}>Скорость</div>
+                <select
+                  value={draftSpeed ?? ''}
+                  onChange={(e) => setDraftSpeed(e.target.value === '' ? null : Number(e.target.value))}
+                  style={{ width: '100%', padding: '10px', borderRadius: 'var(--radius)', border: '1px solid var(--color-border)' }}
+                >
+                  <option value="">—</option>
+                  {[1,2,3,4,5].map(v => <option key={v} value={v}>{v}</option>)}
+                </select>
+              </div>
+              <div>
+                <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--color-text-muted)', marginBottom: 'var(--space-1)' }}>Стоимость</div>
+                <select
+                  value={draftCost ?? ''}
+                  onChange={(e) => setDraftCost(e.target.value === '' ? null : Number(e.target.value))}
+                  style={{ width: '100%', padding: '10px', borderRadius: 'var(--radius)', border: '1px solid var(--color-border)' }}
+                >
+                  <option value="">—</option>
+                  {[1,2,3,4,5].map(v => <option key={v} value={v}>{v}</option>)}
+                </select>
+              </div>
+            </div>
+
+            {saveError && (
+              <div style={{ color: 'var(--color-danger)', marginTop: 'var(--space-3)' }}>{saveError}</div>
+            )}
+            {saved && !saveError && (
+              <div style={{ color: 'var(--color-success)', marginTop: 'var(--space-3)' }}>Сохранено</div>
+            )}
+
+            <div style={{ display: 'flex', gap: 'var(--space-3)', marginTop: 'var(--space-4)' }}>
+              <Button 
+                variant="primary" 
+                onClick={handleSave} 
+                disabled={!isDirty || saving}
+              >
+                {saving ? 'Сохранение...' : 'Сохранить'}
+              </Button>
+              <Button 
+                variant="ghost" 
+                onClick={() => {
+                  setDraftValue(initiative.value ?? null);
+                  setDraftSpeed(initiative.speed ?? null);
+                  setDraftCost(initiative.cost ?? null);
+                  setSaveError(null);
+                  setSaved(false);
+                }}
+              >
+                Сбросить изменения
+              </Button>
+            </div>
+          </Card>
+        </section>
       </main>
 
       {/* Дополнительные действия */}
