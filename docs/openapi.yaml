@@ -1,0 +1,461 @@
+openapi: 3.0.3
+info:
+  title: IdeaFrame API
+  version: 1.0.0
+  description: |
+    API для системы фрейминга портфеля инициатив (MVP). См. PRD и архитектуру.
+servers:
+  - url: https://api.example.com
+    description: Production
+  - url: http://localhost:8080
+    description: Local
+security:
+  - bearerAuth: []
+tags:
+  - name: Auth
+  - name: Users
+  - name: Initiatives
+  - name: Comments
+paths:
+  /v1/auth/register:
+    post:
+      tags: [Auth]
+      summary: Регистрация пользователя и вход
+      operationId: authRegister
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '200':
+          description: Успех, возвращает JWT и пользователя
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '500': { $ref: '#/components/responses/InternalError' }
+      security: []
+  /v1/auth/login:
+    post:
+      tags: [Auth]
+      summary: Вход по логину и паролю
+      operationId: authLogin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Успех, возвращает JWT и пользователя
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalError' }
+      security: []
+
+  /v1/users/me:
+    get:
+      tags: [Users]
+      summary: Текущий пользователь
+      operationId: getMe
+      responses:
+        '200':
+          description: Пользователь
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /v1/initiatives:
+    get:
+      tags: [Initiatives]
+      summary: Список инициатив с фильтрами и сортировкой
+      operationId: listInitiatives
+      parameters:
+        - in: query
+          name: filter
+          schema:
+            type: string
+            enum: [all, proposedByMe, assignedToMe]
+          description: Фильтр списка
+        - in: query
+          name: limit
+          schema: { type: integer, format: int32, minimum: 1, maximum: 100 }
+          description: Размер страницы
+        - in: query
+          name: offset
+          schema: { type: integer, format: int32, minimum: 0 }
+          description: Смещение
+      responses:
+        '200':
+          description: Список инициатив
+          headers:
+            X-Total-Count:
+              schema: { type: integer, format: int32 }
+              description: Общее количество элементов
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Initiative'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    post:
+      tags: [Initiatives]
+      summary: Создать инициативу
+      operationId: createInitiative
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InitiativeCreate'
+      responses:
+        '201':
+          description: Создано
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Initiative'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /v1/initiatives/{id}:
+    get:
+      tags: [Initiatives]
+      summary: Получить инициативу
+      operationId: getInitiative
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Инициатива
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Initiative'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    patch:
+      tags: [Initiatives]
+      summary: Обновить атрибуты/ответственного инициативы
+      operationId: updateInitiative
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InitiativeUpdate'
+      responses:
+        '200':
+          description: Обновлено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Initiative'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    delete:
+      tags: [Initiatives]
+      summary: Удалить инициативу
+      operationId: deleteInitiative
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '204': { description: Удалено }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /v1/initiatives/{id}/comments:
+    get:
+      tags: [Comments]
+      summary: Список комментариев инициативы
+      operationId: listComments
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Список комментариев
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Comment'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    post:
+      tags: [Comments]
+      summary: Добавить комментарий к инициативе
+      operationId: createComment
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CommentCreate'
+      responses:
+        '201':
+          description: Комментарий создан
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Comment'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    IdParam:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+  responses:
+    BadRequest:
+      description: Неверные данные запроса
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Unauthorized:
+      description: Требуется аутентификация
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Forbidden:
+      description: Запрещено
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: Не найдено
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Conflict:
+      description: Конфликт состояния или уникальности
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Unprocessable:
+      description: Ошибка валидации
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    InternalError:
+      description: Внутренняя ошибка сервера
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+
+  schemas:
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          example: VALIDATION_ERROR
+        message:
+          type: string
+          example: Title is required
+        details:
+          type: object
+          additionalProperties: true
+        correlationId:
+          type: string
+          format: uuid
+
+    User:
+      type: object
+      required: [id, login, displayName, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        login:
+          type: string
+          minLength: 3
+          maxLength: 32
+          pattern: '^[A-Za-z0-9._-]+$'
+        displayName:
+          type: string
+          minLength: 1
+          maxLength: 64
+        createdAt: { type: string, format: date-time }
+
+    RegisterRequest:
+      type: object
+      required: [login, displayName, password, passwordConfirm]
+      properties:
+        login:
+          type: string
+          minLength: 3
+          maxLength: 32
+          pattern: '^[A-Za-z0-9._-]+$'
+        displayName:
+          type: string
+          minLength: 1
+          maxLength: 64
+        password:
+          type: string
+          minLength: 8
+        passwordConfirm:
+          type: string
+          minLength: 8
+
+    LoginRequest:
+      type: object
+      required: [login, password]
+      properties:
+        login:
+          type: string
+          minLength: 3
+          maxLength: 32
+          pattern: '^[A-Za-z0-9._-]+$'
+        password:
+          type: string
+          minLength: 8
+
+    AuthResponse:
+      type: object
+      required: [token, user, expiresAt]
+      properties:
+        token: { type: string, description: JWT }
+        expiresAt: { type: string, format: date-time }
+        user:
+          $ref: '#/components/schemas/User'
+
+    InitiativeBase:
+      type: object
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 120
+        descriptionMd:
+          type: string
+          maxLength: 5000
+        valueScore:
+          type: integer
+          minimum: 1
+          maximum: 5
+        speedScore:
+          type: integer
+          minimum: 1
+          maximum: 5
+        costScore:
+          type: integer
+          minimum: 1
+          maximum: 5
+        responsibleUserId:
+          type: string
+          format: uuid
+          nullable: true
+
+    InitiativeCreate:
+      allOf:
+        - $ref: '#/components/schemas/InitiativeBase'
+      required: [title]
+
+    InitiativeUpdate:
+      allOf:
+        - $ref: '#/components/schemas/InitiativeBase'
+
+    Initiative:
+      type: object
+      required: [id, title, proposerUserId, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        title:
+          type: string
+          minLength: 1
+          maxLength: 120
+        descriptionMd:
+          type: string
+          maxLength: 5000
+          nullable: true
+        proposerUserId: { type: string, format: uuid }
+        responsibleUserId:
+          type: string
+          format: uuid
+          nullable: true
+        valueScore:
+          type: integer
+          minimum: 1
+          maximum: 5
+          nullable: true
+        speedScore:
+          type: integer
+          minimum: 1
+          maximum: 5
+          nullable: true
+        costScore:
+          type: integer
+          minimum: 1
+          maximum: 5
+          nullable: true
+        weight:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 5
+          nullable: true
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    CommentCreate:
+      type: object
+      required: [body]
+      properties:
+        body:
+          type: string
+          minLength: 1
+          maxLength: 1000
+
+    Comment:
+      type: object
+      required: [id, initiativeId, authorUserId, body, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        initiativeId: { type: string, format: uuid }
+        authorUserId: { type: string, format: uuid }
+        body:
+          type: string
+          minLength: 1
+          maxLength: 1000
+        createdAt: { type: string, format: date-time }
+
+

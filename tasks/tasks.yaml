@@ -1,0 +1,234 @@
+version: 1
+sources:
+  prd: docs/prd.md
+  architecture: docs/architecture.md
+  deployment: docs/deployment.md
+  dbml: db/schema.dbml
+  openapi: docs/openapi.yaml
+
+tasks:
+  - id: TK-001
+    title: Пользователи и аутентификация (JWT 24h)
+    order: 10
+    status: planned
+    frRefs: [FR1]
+    context:
+      prd: "docs/prd.md#22-fr1-регистрация-и-вход"
+      architecture: "docs/architecture.md#регистрация-и-вход"
+      dbml: "db/schema.dbml#users"
+      openapi: "docs/openapi.yaml#/paths/~1v1~1auth~1register"
+      deployment: "docs/deployment.md#переменные-окружения-env"
+    acceptanceCriteria:
+      - text: "В OpenAPI описаны /v1/auth/register, /v1/auth/login, /v1/users/me; security bearer JWT 24h"
+        done: false
+      - text: "В DBML есть таблица users с полями id, login, display_name, password_hash, created_at"
+        done: false
+      - text: "Собранный backend поднимает эндпоинты /healthz и /readyz (200) в docker-compose"
+        done: false
+      - text: "Локальный вход возвращает JWT и expiresAt≈24h, /v1/users/me отдаёт пользователя"
+        done: false
+    subtasks:
+      - id: TK-001/AN
+        role: AN
+        title: Детальная спецификация аутентификации
+        status: planned
+        outputs:
+          - docs/specs/TK-001.md
+      - id: TK-001/BE
+        role: BE
+        title: Реализация backend auth (register/login/me, JWT)
+        status: planned
+      - id: TK-001/FE
+        role: FE
+        title: Экран логина/регистрации и хранение токена
+        status: planned
+      - id: TK-001/DV
+        role: DV
+        title: Переменные окружения и прокси маршруты в Caddy
+        status: planned
+
+  - id: TK-002
+    title: CRUD инициатив (создание, просмотр, обновление атрибутов, удаление)
+    order: 20
+    status: planned
+    frRefs: [FR2, FR4]
+    context:
+      prd: "docs/prd.md#3-ключевые-пользовательские-сценарии"
+      architecture: "docs/architecture.md#создание-инициативы"
+      dbml: "db/schema.dbml#initiatives"
+      openapi: "docs/openapi.yaml#/paths/~1v1~1initiatives"
+      deployment: "docs/deployment.md#переменные-окружения-env"
+    acceptanceCriteria:
+      - text: "Эндпоинты /v1/initiatives (POST, GET), /v1/initiatives/{id} (GET, PATCH, DELETE) соответствуют OpenAPI"
+        done: false
+      - text: "В DBML таблица initiatives и индексы соответствуют schema.dbml"
+        done: false
+      - text: "При PATCH атрибутов пересчёт weight выполняется по формуле из PRD на бэкенде"
+        done: false
+      - text: "Создание/чтение/обновление/удаление инициатив проверены локально"
+        done: false
+    subtasks:
+      - id: TK-002/AN
+        role: AN
+        title: Спецификация CRUD инициатив и расчёта веса
+        status: planned
+        outputs:
+          - docs/specs/TK-002.md
+      - id: TK-002/BE
+        role: BE
+        title: Реализация API инициатив и расчёта веса
+        status: planned
+      - id: TK-002/FE
+        role: FE
+        title: Экран карточки инициативы с Markdown и атрибутами
+        status: planned
+      - id: TK-002/DV
+        role: DV
+        title: Миграции и запуск API в compose с зависимостью от migrate
+        status: planned
+
+  - id: TK-003
+    title: Комментарии к инициативам (чат)
+    order: 30
+    status: planned
+    frRefs: [FR3]
+    context:
+      prd: "docs/prd.md#fr3-комментарии-чат"
+      architecture: "docs/architecture.md#добавление-комментария"
+      dbml: "db/schema.dbml#comments"
+      openapi: "docs/openapi.yaml#/paths/~1v1~1initiatives~1{id}~1comments"
+      deployment: "docs/deployment.md#docker-compose-рекомендованный-план"
+    acceptanceCriteria:
+      - text: "Эндпоинты /v1/initiatives/{id}/comments (GET, POST) соответствуют OpenAPI"
+        done: false
+      - text: "В DBML таблица comments и связи соответствуют schema.dbml"
+        done: false
+      - text: "Комментарии отображаются в карточке инициативы; пустые не отправляются"
+        done: false
+      - text: "Сортировка ленты по возрастанию времени поддерживается"
+        done: false
+    subtasks:
+      - id: TK-003/AN
+        role: AN
+        title: Спецификация ленты комментариев
+        status: planned
+        outputs:
+          - docs/specs/TK-003.md
+      - id: TK-003/BE
+        role: BE
+        title: Реализация API комментариев
+        status: planned
+      - id: TK-003/FE
+        role: FE
+        title: UI чата комментариев
+        status: planned
+      - id: TK-003/DV
+        role: DV
+        title: Проверка health и логов для комментариев
+        status: planned
+
+  - id: TK-004
+    title: Ответственный за инициативу
+    order: 40
+    status: planned
+    frRefs: [FR5]
+    context:
+      prd: "docs/prd.md#fr5-назначение-ответственного"
+      architecture: "docs/architecture.md#оценка-атрибутов-и-пересчет-веса"
+      dbml: "db/schema.dbml#initiatives"
+      openapi: "docs/openapi.yaml#/components/schemas/InitiativeUpdate"
+      deployment: "docs/deployment.md#переменные-окружения-env"
+    acceptanceCriteria:
+      - text: "В InitiativeUpdate и Initiative присутствует responsibleUserId nullable"
+        done: false
+      - text: "PATCH инициативы поддерживает установку/снятие ответственного"
+        done: false
+      - text: "В UI отображается текущий ответственный и доступен выбор из списка пользователей"
+        done: false
+    subtasks:
+      - id: TK-004/AN
+        role: AN
+        title: Спецификация выбора ответственного
+        status: planned
+        outputs:
+          - docs/specs/TK-004.md
+      - id: TK-004/BE
+        role: BE
+        title: Backend поддержка responsibleUserId
+        status: planned
+      - id: TK-004/FE
+        role: FE
+        title: UI выбора ответственного в карточке инициативы
+        status: planned
+      - id: TK-004/DV
+        role: DV
+        title: Smoke-тесты compose для операций PATCH
+        status: planned
+
+  - id: TK-005
+    title: "Список инициатив: фильтры и сортировка"
+    order: 50
+    status: planned
+    frRefs: [FR6]
+    context:
+      prd: "docs/prd.md#fr6-список-инициатив-фильтры-и-сортировка"
+      architecture: "docs/architecture.md#список-инициатив-с-фильтрами-и-сортировкой"
+      dbml: "db/schema.dbml#initiatives"
+      openapi: "docs/openapi.yaml#/paths/~1v1~1initiatives"
+      deployment: "docs/deployment.md#docker-compose-рекомендованный-план"
+    acceptanceCriteria:
+      - text: "GET /v1/initiatives поддерживает filter=all|proposedByMe|assignedToMe и пагинацию"
+        done: false
+      - text: "Сортировка по умолчанию weight desc, затем createdAt desc реализована"
+        done: false
+      - text: "Фронтенд отображает список карточек, переключение фильтров без перезагрузки"
+        done: false
+    subtasks:
+      - id: TK-005/AN
+        role: AN
+        title: Спецификация списка и фильтров
+        status: planned
+        outputs:
+          - docs/specs/TK-005.md
+      - id: TK-005/BE
+        role: BE
+        title: Реализация списка с фильтрами и сортировкой
+        status: planned
+      - id: TK-005/FE
+        role: FE
+        title: Экран списка инициатив
+        status: planned
+      - id: TK-005/DV
+        role: DV
+        title: Наблюдаемость (логи/health) и проверка производительности запроса
+        status: planned
+
+  - id: TK-006
+    title: Инфраструктура и локальный/прод деплой (compose, Caddy, миграции)
+    order: 60
+    status: planned
+    frRefs: []
+    context:
+      prd: "docs/prd.md#7-нефункциональные-требования-простота-и-надежность"
+      architecture: "docs/architecture.md#наблюдаемость"
+      dbml: "db/schema.dbml"
+      openapi: "docs/openapi.yaml"
+      deployment: "docs/deployment.md"
+    acceptanceCriteria:
+      - text: "В репозитории присутствуют infra/docker-compose.yml, infra/Caddyfile, infra/.env.example"
+        done: false
+      - text: "Миграции применяются автоматически; API проходит /healthz и /readyz в compose"
+        done: false
+      - text: "Документированы шаги деплоя и проверок (deployment.md)"
+        done: false
+    subtasks:
+      - id: TK-006/AN
+        role: AN
+        title: Уточнение инфраструктурных артефактов
+        status: planned
+        outputs:
+          - docs/specs/TK-006.md
+      - id: TK-006/DV
+        role: DV
+        title: Реализация compose, Caddyfile и окружений
+        status: planned

@@ -1,0 +1,54 @@
+Project ideaframe {
+  database_type: "PostgreSQL"
+}
+
+Table users {
+  id uuid [pk, note: 'UUID v4']
+  login varchar(32) [not null, unique, note: 'латиница/цифры/._-; 3–32 символа']
+  display_name varchar(64) [not null]
+  password_hash text [not null]
+  created_at timestamptz [not null, note: 'UTC; DEFAULT now()']
+
+  Note: 'Пользователи системы'
+}
+
+Table initiatives {
+  id uuid [pk, note: 'UUID v4']
+  title varchar(120) [not null]
+  description_md text [note: 'Markdown; до 5000 символов']
+  proposer_user_id uuid [not null]
+  responsible_user_id uuid [note: 'nullable (может отсутствовать)']
+  value_score smallint [note: 'диапазон 1..5']
+  speed_score smallint [note: 'диапазон 1..5']
+  cost_score smallint [note: 'диапазон 1..5']
+  weight numeric(3,2) [note: '0.00..5.00; вычисляется формулой']
+  created_at timestamptz [not null]
+  updated_at timestamptz [not null]
+
+  Note: 'Формула веса: weight = round(0.5*value + 0.3*speed + 0.2*(6 - cost), 2)'
+
+  Indexes {
+    (weight, created_at) [name: 'idx_initiatives_weight_created_at']
+    (proposer_user_id) [name: 'idx_initiatives_proposer_user_id']
+    (responsible_user_id) [name: 'idx_initiatives_responsible_user_id']
+  }
+}
+
+Table comments {
+  id uuid [pk, note: 'UUID v4']
+  initiative_id uuid [not null]
+  author_user_id uuid [not null]
+  body varchar(1000) [not null]
+  created_at timestamptz [not null]
+
+  Indexes {
+    (initiative_id, created_at) [name: 'idx_comments_initiative_created_at']
+  }
+}
+
+Ref: initiatives.proposer_user_id > users.id [update: restrict, delete: restrict]
+Ref: initiatives.responsible_user_id > users.id [update: restrict, delete: set null]
+Ref: comments.initiative_id > initiatives.id [update: restrict, delete: cascade]
+Ref: comments.author_user_id > users.id [update: restrict, delete: restrict]
+
+
