@@ -1,7 +1,7 @@
 version: '3.8'
 
 services:
-  postgres:
+  ideaframe-postgres:
     image: postgres:16-alpine
     container_name: ideaframe-db
     environment:
@@ -11,15 +11,16 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql/data
       - ../db/migrations:/docker-entrypoint-initdb.d
-    ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+    expose:
+      - "5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ideaframe}"]
       interval: 10s
       timeout: 5s
       retries: 5
     networks:
-      - ideaframe-net
+      - default
+      - meetax_net
 
   backend:
     build:
@@ -27,7 +28,7 @@ services:
       dockerfile: Dockerfile
     container_name: ideaframe-backend
     environment:
-      DATABASE_URL: postgres://${POSTGRES_USER:-ideaframe}:${POSTGRES_PASSWORD:-secretpassword}@postgres:5432/${POSTGRES_DB:-ideaframe}?sslmode=disable
+      DATABASE_URL: postgres://${POSTGRES_USER:-ideaframe}:${POSTGRES_PASSWORD:-secretpassword}@ideaframe-postgres:5432/${POSTGRES_DB:-ideaframe}?sslmode=disable
       JWT_SECRET: ${JWT_SECRET}
       BACKEND_PORT: ${BACKEND_PORT:-8080}
       ENV: ${ENV:-dev}
@@ -48,12 +49,13 @@ services:
       # Admin roles
       ADMIN_EMAILS: ${ADMIN_EMAILS:-}
     depends_on:
-      postgres:
+      ideaframe-postgres:
         condition: service_healthy
     expose:
       - "${BACKEND_PORT:-8080}"
     networks:
-      - ideaframe-net
+      - default
+      - meetax_net
 
   frontend:
     build:
@@ -65,18 +67,20 @@ services:
     expose:
       - "80"
     networks:
-      - ideaframe-net
+      - default
+      - meetax_net
 
   caddy:
     image: caddy:2.7-alpine
     container_name: ideaframe-proxy
+    profiles: ["disabled"]
     ports:
       - "${APP_PORT:-80}:80"
       - "${APP_HTTPS_PORT:-443}:443"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile
-      - caddy-data:/data
-      - caddy-config:/config
+      - ideaframe-caddy-data:/data
+      - ideaframe-caddy-config:/config
     environment:
       DOMAIN: ${DOMAIN:-localhost}
       ACME_EMAIL: ${ACME_EMAIL:-}
@@ -84,13 +88,14 @@ services:
       - backend
       - frontend
     networks:
-      - ideaframe-net
+      - default
+      - meetax_net
 
 networks:
-  ideaframe-net:
-    driver: bridge
+  meetax_net:
+    external: true
 
 volumes:
   postgres-data:
-  caddy-data:
-  caddy-config:
+  ideaframe-caddy-data:
+  ideaframe-caddy-config:
