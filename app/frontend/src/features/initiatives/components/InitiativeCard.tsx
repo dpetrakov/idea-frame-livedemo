@@ -4,15 +4,19 @@
 import React from 'react';
 import { Card } from '../../../shared/ui/Card';
 import { renderMarkdown, truncateText } from '../../../shared/lib/markdown';
+import { VoteButtons } from './VoteButtons';
 import type { Initiative } from '../types';
 
 interface InitiativeCardProps {
   initiative: Initiative;
   showFullDescription?: boolean;
   onEdit?: () => void;
+  onDelete?: () => void;
+  canEditAdminFields?: boolean;
+  onVoteChange?: (updatedInitiative: Initiative) => void;
 }
 
-export function InitiativeCard({ initiative, showFullDescription = true, onEdit }: InitiativeCardProps) {
+export function InitiativeCard({ initiative, showFullDescription = true, onEdit, onDelete, canEditAdminFields = false, onVoteChange }: InitiativeCardProps) {
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
     return date.toLocaleDateString('ru-RU', {
@@ -52,19 +56,61 @@ export function InitiativeCard({ initiative, showFullDescription = true, onEdit 
           {initiative.title}
         </h1>
         
-        {/* Вес инициативы */}
-        <div style={{
-          background: 'var(--color-highlight)',
-          color: 'white',
-          padding: 'var(--space-2) var(--space-3)',
-          borderRadius: 'var(--radius)',
-          fontWeight: 600,
-          fontSize: 'var(--fs-lg)',
-          minWidth: '60px',
-          textAlign: 'center',
-          boxShadow: 'var(--shadow-sm)'
-        }}>
-          {formatWeight(initiative.weight)}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+          {/* Кнопки действий (редактирование/удаление) */}
+          {(onEdit || (onDelete && canEditAdminFields)) && (
+            <div style={{ display: 'flex', gap: 'var(--space-1)' }}>
+              {onEdit && (
+                <button
+                  onClick={onEdit}
+                  style={{
+                    background: 'transparent',
+                    border: '1px solid var(--color-border)',
+                    borderRadius: 'var(--radius)',
+                    padding: 'var(--space-2)',
+                    cursor: 'pointer',
+                    color: 'var(--color-text-muted)',
+                    fontSize: 'var(--fs-sm)',
+                  }}
+                  title="Редактировать инициативу"
+                >
+                  ✏️
+                </button>
+              )}
+              {onDelete && canEditAdminFields && (
+                <button
+                  onClick={onDelete}
+                  style={{
+                    background: 'transparent',
+                    border: '1px solid var(--color-danger)',
+                    borderRadius: 'var(--radius)',
+                    padding: 'var(--space-2)',
+                    cursor: 'pointer',
+                    color: 'var(--color-danger)',
+                    fontSize: 'var(--fs-sm)',
+                  }}
+                  title="Удалить инициативу"
+                >
+                  🗑️
+                </button>
+              )}
+            </div>
+          )}
+          
+          {/* Вес инициативы */}
+          <div style={{
+            background: 'var(--color-highlight)',
+            color: 'white',
+            padding: 'var(--space-2) var(--space-3)',
+            borderRadius: 'var(--radius)',
+            fontWeight: 600,
+            fontSize: 'var(--fs-lg)',
+            minWidth: '60px',
+            textAlign: 'center',
+            boxShadow: 'var(--shadow-sm)'
+          }}>
+            {formatWeight(initiative.weight)}
+          </div>
         </div>
       </div>
 
@@ -180,6 +226,22 @@ export function InitiativeCard({ initiative, showFullDescription = true, onEdit 
         </div>
       </div>
 
+      {/* Голосование */}
+      {onVoteChange && (
+        <div style={{
+          display: 'flex',
+          justifyContent: 'center',
+          padding: 'var(--space-3)',
+          background: 'var(--color-bg-soft)',
+          borderRadius: 'var(--radius)',
+        }}>
+          <VoteButtons
+            initiative={initiative}
+            onVoteChange={onVoteChange}
+          />
+        </div>
+      )}
+
       {/* Описание */}
       {initiative.description && showFullDescription && (
         <div>
@@ -265,31 +327,6 @@ export function InitiativeCard({ initiative, showFullDescription = true, onEdit 
             WebkitBoxOrient: 'vertical',
           } as React.CSSProperties}
         />
-      )}
-      
-      {/* Кнопка редактирования (если доступна) */}
-      {onEdit && (
-        <div style={{ 
-          position: 'absolute', 
-          top: 'var(--space-4)', 
-          right: 'var(--space-4)' 
-        }}>
-          <button
-            onClick={onEdit}
-            style={{
-              background: 'transparent',
-              border: '1px solid var(--color-border)',
-              borderRadius: 'var(--radius)',
-              padding: 'var(--space-2)',
-              cursor: 'pointer',
-              color: 'var(--color-text-muted)',
-              fontSize: 'var(--fs-sm)',
-            }}
-            title="Редактировать инициативу"
-          >
-            ✏️
-          </button>
-        </div>
       )}
     </Card>
   );

@@ -7,7 +7,8 @@ import type {
   InitiativeCreate, 
   InitiativeUpdate,
   InitiativesList,
-  UserBrief 
+  UserBrief,
+  VoteRequest
 } from './types';
 
 /**
@@ -46,11 +47,22 @@ export async function updateInitiative(id: string, data: InitiativeUpdate): Prom
 }
 
 /**
- * Получение списка инициатив (подготовка для TK-005)
+ * Логическое удаление инициативы (только админ)
+ * DELETE /v1/initiatives/{id}
+ */
+export async function deleteInitiative(id: string): Promise<void> {
+  await api<void>(`/v1/initiatives/${id}`, {
+    method: 'DELETE',
+  });
+}
+
+/**
+ * Получение списка инициатив (TK-005, TK-009)
  * GET /v1/initiatives
  */
 export async function getInitiativesList(params?: {
   filter?: string;
+  sort?: string;
   limit?: number;
   offset?: number;
 }): Promise<InitiativesList> {
@@ -58,6 +70,9 @@ export async function getInitiativesList(params?: {
   
   if (params?.filter) {
     searchParams.append('filter', params.filter);
+  }
+  if (params?.sort) {
+    searchParams.append('sort', params.sort);
   }
   if (params?.limit !== undefined) {
     searchParams.append('limit', params.limit.toString());
@@ -100,6 +115,18 @@ export async function addComment(initiativeId: string, text: string): Promise<im
     method: 'POST',
     body: JSON.stringify({ text }),
   });
+}
+
+/**
+ * Голосование за инициативу
+ * POST /v1/initiatives/{id}/vote
+ */
+export async function voteForInitiative(id: string, vote: VoteRequest): Promise<Initiative> {
+  const response = await api<Initiative>(`/v1/initiatives/${id}/vote`, {
+    method: 'POST',
+    body: JSON.stringify(vote),
+  });
+  return response;
 }
 
 // Utility functions для валидации

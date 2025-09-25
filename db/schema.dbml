@@ -1,11 +1,11 @@
-// Database schema for "Idea Frame Livedemo" - система фрейминга портфеля инициатив
+// Database schema for "MeetAx Next" — площадка идей для развития MeetAx
 // Логическая модель данных на основе PRD и архитектуры
 // Поддерживает создание инициатив, оценку по шкалам, комментарии, назначение ответственных
 
-Project IdeaFrameLivedemo {
+Project MeetAxNext {
   database_type: 'PostgreSQL'
   Note: '''
-  Система фрейминга портфеля инициатив
+  MeetAx Next — площадка, где рождаются и отбираются идеи для будущего развития MeetAx.
   - Создание и оценка инициатив по шкалам ценность/скорость/стоимость
   - Комментарии в формате чата
   - Назначение ответственных
@@ -19,6 +19,8 @@ Table users {
   login varchar(32) [not null, unique]
   display_name varchar(32) [not null]
   password_hash varchar(255) [not null]
+  email varchar(255) [not null, unique]
+  email_verified_at timestamptz
   created_at timestamptz [not null, default: `now()`]
   updated_at timestamptz [not null, default: `now()`]
 
@@ -26,6 +28,7 @@ Table users {
   
   Indexes {
     login [unique, name: 'idx_users_login']
+    email [unique, name: 'idx_users_email']
     created_at [name: 'idx_users_created_at']
   }
 }
@@ -37,6 +40,7 @@ Table initiatives {
   description text
   author_id uuid [not null, ref: > users.id]
   assignee_id uuid [ref: > users.id]
+  is_deleted boolean [not null, default: false]
   value smallint [note: 'Ценность 1-5']
   speed smallint [note: 'Скорость реализации 1-5']
   cost smallint [note: 'Стоимость 1-5']
@@ -55,6 +59,44 @@ Table initiatives {
     author_id [name: 'idx_initiatives_author']
     assignee_id [name: 'idx_initiatives_assignee']
     created_at [name: 'idx_initiatives_created_at']
+    is_deleted [name: 'idx_initiatives_is_deleted']
+  }
+}
+
+// Голоса пользователей за инициативы (up/down)
+Table initiative_votes {
+  id uuid [pk, default: `gen_random_uuid()`]
+  initiative_id uuid [not null, ref: > initiatives.id]
+  user_id uuid [not null, ref: > users.id]
+  value smallint [not null, note: '−1 = down, 1 = up']
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+
+  Note: 'Один активный голос пользователя на инициативу; смена голоса — обновление записи.'
+
+  Indexes {
+    (initiative_id, user_id) [unique, name: 'ux_votes_initiative_user']
+    initiative_id [name: 'idx_votes_initiative']
+    user_id [name: 'idx_votes_user']
+  }
+}
+
+// Одноразовые коды подтверждения e‑mail для регистрации
+Table email_codes {
+  id uuid [pk, default: `gen_random_uuid()`]
+  email varchar(255) [not null]
+  code varchar(6) [not null]
+  created_at timestamptz [not null, default: `now()`]
+  expires_at timestamptz [not null]
+  used_at timestamptz
+  requested_ip varchar(64)
+
+  Note: 'Коды c TTL; rate‑limit и домен проверяются на сервере; уборка просроченных кодов — периодически.'
+
+  Indexes {
+    (email, code) [name: 'idx_email_codes_email_code']
+    email [name: 'idx_email_codes_email']
+    expires_at [name: 'idx_email_codes_expires_at']
   }
 }
 
@@ -77,8 +119,10 @@ Table comments {
 // Ограничения данных описаны в комментариях к полям выше
 // Будут реализованы как CHECK constraints в SQL миграциях:
 // - value, speed, cost: диапазон 1-5 или NULL
+// - initiative_votes.value: ∈ {-1, 1}
 // - login: длина 3-32 символа
 // - display_name: длина 1-32 символа  
+// - email: формат e-mail (валидация домена — на сервере), уникальность
 // - title: длина 1-140 символов
 // - description: длина до 10000 символов или NULL
 // - text: длина 1-1000 символов
@@ -88,3 +132,5 @@ Ref: initiatives.author_id > users.id [delete: restrict, update: restrict]
 Ref: initiatives.assignee_id > users.id [delete: set null, update: restrict]
 Ref: comments.initiative_id > initiatives.id [delete: cascade, update: restrict]
 Ref: comments.author_id > users.id [delete: restrict, update: restrict]
+Ref: initiative_votes.initiative_id > initiatives.id [delete: cascade, update: restrict]
+Ref: initiative_votes.user_id > users.id [delete: cascade, update: restrict]

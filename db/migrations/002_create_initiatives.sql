@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS initiatives (
     description       TEXT,
     author_id         UUID NOT NULL REFERENCES users(id) ON DELETE RESTRICT ON UPDATE RESTRICT,
     assignee_id       UUID REFERENCES users(id) ON DELETE SET NULL ON UPDATE RESTRICT,
+    is_deleted        BOOLEAN NOT NULL DEFAULT FALSE,
     value             SMALLINT,
     speed             SMALLINT,
     cost              SMALLINT,
@@ -48,6 +49,7 @@ CREATE INDEX idx_initiatives_weight_created ON initiatives (weight DESC, created
 CREATE INDEX idx_initiatives_author ON initiatives (author_id);
 CREATE INDEX idx_initiatives_assignee ON initiatives (assignee_id);
 CREATE INDEX idx_initiatives_created_at ON initiatives (created_at);
+CREATE INDEX idx_initiatives_is_deleted ON initiatives (is_deleted);
 
 -- Функция для автоматического обновления updated_at
 CREATE OR REPLACE FUNCTION update_updated_at_column()

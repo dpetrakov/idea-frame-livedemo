@@ -1,6 +1,6 @@
-# Стратегия развертывания (Docker Compose + Caddy)
+# MeetAx Next: стратегия развертывания (Docker Compose + Caddy)
 
-Целевой домен: ideaframe.dimlight.online
+Целевой домен: meetax.example.com
 
 Документ описывает единый способ развёртывания для локальной разработки и продакшн‑сервера. Конфиги едины, различаются только значения переменных в файле .env.
 
@@ -12,12 +12,12 @@
 - PostgreSQL (данные в volume)
 
 Роутинг:
-- `https://ideaframe.dimlight.online/api/*` → backend
+- `https://meetax.example.com/api/*` → backend
 - Остальные запросы → frontend
 
 ## DNS и сеть
 
-- Создайте DNS A/AAAA записи на IP сервера для `ideaframe.dimlight.online`.
+- Создайте DNS A/AAAA записи на IP сервера для `meetax.example.com`.
 - Откройте на сервере входящие порты 80 и 443 (HTTPS через Caddy / ACME).
 
 ## Переменные окружения (.env)
@@ -25,7 +25,7 @@
 Хранится в корне репозитория: `./.env`. Пример содержимого:
 
 ```
-APP_URL=ideaframe.dimlight.online
+APP_URL=meetax.example.com
 CADDY_EMAIL=you@example.com
 
 # PostgreSQL
@@ -40,8 +40,26 @@ BACKEND_PORT=8080
 FRONTEND_PORT=3000
 JWT_SECRET=change_me
 
+# Email verification / SMTP (предпочтительно)
+AXENIX_EMAIL_DOMAIN=axenix.pro
+EMAIL_CODES_TTL_MINUTES=10
+SMTP_HOST=mail.dimlight.online
+SMTP_PORT=587
+SMTP_USERNAME=noreply@dimlight.online
+SMTP_PASSWORD=***_set_in_vault_***
+SMTP_FROM=noreply@dimlight.online
+SMTP_TLS_SERVER_NAME=hosting.reg.ru   # если TLS сертификат не на SMTP_HOST
+SMTP_TLS_INSECURE_SKIP_VERIFY=false   # true только для отладки
+
+# Mailgun удалён. Используем только SMTP
+
 # Полная строка подключения (явно)
 DATABASE_URL=postgres://idea:strong_password@postgres:5432/idea?sslmode=disable
+
+# Роли админа (V2)
+# Список e-mail через запятую, без пробелов; сравнение в нижнем регистре
+# Пример:
+ADMIN_EMAILS=admin1@axenix.pro,admin2@axenix.pro
 ```
 
 Не коммитьте `.env`. Поддерживайте `.env.example` без секретов.
@@ -75,22 +93,22 @@ cd app/frontend && npm install && cd ../..
 
 ```bash
 # Caddy должен быть доступен на 80/443 (внешний доступ)
-curl -I http://ideaframe.dimlight.online | cat
-curl -I https://ideaframe.dimlight.online | cat
+curl -I http://meetax.example.com | cat
+curl -I https://meetax.example.com | cat
 
 # Health чек API
-curl https://ideaframe.dimlight.online/api/health | cat
+curl https://meetax.example.com/api/health | cat
 
 # OpenAPI сервер из документа
 # Основной префикс API в системе: /api/v1
-curl https://ideaframe.dimlight.online/api/v1/health | cat || true
+curl https://meetax.example.com/api/v1/health | cat || true
 ```
 
 Ожидаем 200 и JSON со статусом.
 
 ## Caddy конфигурация
 
-Файл: `infra/caddy/Caddyfile` (универсальный для dev/prod). Используется переменная `APP_URL=ideaframe.dimlight.online` из `.env`, автоматический выпуск сертификатов Let's Encrypt.
+Файл: `infra/caddy/Caddyfile` (универсальный для dev/prod). Используется переменная `APP_URL=meetax.example.com` из `.env`, автоматический выпуск сертификатов Let's Encrypt.
 
 Ключевые моменты:
 - Заголовки безопасности: HSTS, CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy.
@@ -121,12 +139,12 @@ docker compose --env-file ./.env -f infra/docker-compose.yml up -d --build
 
 ## Чек‑лист
 
-- [x] `APP_URL=ideaframe.dimlight.online` задан в `.env`.
+- [x] `APP_URL=meetax.example.com` задан в `.env`.
 - [x] `CADDY_EMAIL` заполнен (настоящий e-mail для ACME).
 - [x] Порты 80 и 443 доступны снаружи.
 - [x] PostgreSQL доступен по `DATABASE_URL`.
 - [x] `JWT_SECRET` установлен.
 - [x] Запросы `/api/*` идут в backend; остальное в frontend.
-- [x] `https://ideaframe.dimlight.online/api/health` возвращает 200.
+- [x] `https://meetax.example.com/api/health` возвращает 200.
 
 

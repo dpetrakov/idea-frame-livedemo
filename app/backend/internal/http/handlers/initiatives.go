@@ -19,12 +19,14 @@ import (
 // InitiativeHandlers handles initiative HTTP endpoints
 type InitiativeHandlers struct {
 	initiativeService *service.InitiativeService
+	voteService       *service.VoteService
 }
 
 // NewInitiativeHandlers creates new initiative handlers
-func NewInitiativeHandlers(initiativeService *service.InitiativeService) *InitiativeHandlers {
+func NewInitiativeHandlers(initiativeService *service.InitiativeService, voteService *service.VoteService) *InitiativeHandlers {
 	return &InitiativeHandlers{
 		initiativeService: initiativeService,
+		voteService:       voteService,
 	}
 }
 
@@ -58,7 +60,7 @@ func (h *InitiativeHandlers) CreateInitiative(w http.ResponseWriter, r *http.Req
 			writeErrorResponse(w, requestID, http.StatusBadRequest, "VALIDATION_ERROR", err.Error())
 			return
 		}
-		
+
 		logger.Error("failed to create initiative", "error", err, "requestId", requestID)
 		writeErrorResponse(w, requestID, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to create initiative")
 		return
@@ -110,7 +112,7 @@ func (h *InitiativeHandlers) GetInitiative(w http.ResponseWriter, r *http.Reques
 			writeErrorResponse(w, requestID, http.StatusNotFound, "NOT_FOUND", "Initiative not found")
 			return
 		}
-		
+
 		logger.Error("failed to get initiative", "error", err, "id", initiativeID, "requestId", requestID)
 		writeErrorResponse(w, requestID, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to retrieve initiative")
 		return
@@ -170,6 +172,11 @@ func (h *InitiativeHandlers) UpdateInitiative(w http.ResponseWriter, r *http.Req
 			writeErrorResponse(w, requestID, http.StatusNotFound, "NOT_FOUND", "Initiative not found")
 			return
 		}
+		if errors.Is(err, domain.ErrForbidden) {
+			logger.Warn("forbidden update of admin fields", "id", initiativeID, "userID", userID, "requestId", requestID)
+			writeErrorResponse(w, requestID, http.StatusForbidden, "FORBIDDEN", "Недостаточно прав")
+			return
+		}
 		var vErr domain.ValidationError
 		if errors.As(err, &vErr) {
 			logger.Warn("validation error updating initiative", "error", vErr, "id", initiativeID, "requestId", requestID)
@@ -181,7 +188,7 @@ func (h *InitiativeHandlers) UpdateInitiative(w http.ResponseWriter, r *http.Req
 			middleware.RespondWithErrorDetails(w, r, http.StatusBadRequest, vErr.Error(), "VALIDATION_ERROR", details)
 			return
 		}
-		
+
 		logger.Error("failed to update initiative", "error", err, "id", initiativeID, "requestId", requestID)
 		writeErrorResponse(w, requestID, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to update initiative")
 		return
@@ -194,6 +201,44 @@ func (h *InitiativeHandlers) UpdateInitiative(w http.ResponseWriter, r *http.Req
 	w.Header().Set("X-Request-ID", requestID)
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(initiative)
+}
+
+// DeleteInitiative handles DELETE /initiatives/{id}
+func (h *InitiativeHandlers) DeleteInitiative(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	logger := telemetry.LoggerFromContext(ctx)
+	requestID := middleware.RequestIDFromContext(ctx)
+
+	userID := middleware.UserIDFromContext(ctx)
+	if userID == uuid.Nil {
+		writeErrorResponse(w, requestID, http.StatusUnauthorized, "UNAUTHORIZED", "Authorization required")
+		return
+	}
+
+	initiativeIDStr := chi.URLParam(r, "id")
+	initiativeID, err := uuid.Parse(initiativeIDStr)
+	if err != nil {
+		writeErrorResponse(w, requestID, http.StatusBadRequest, "INVALID_ID", "Invalid initiative ID format")
+		return
+	}
+
+	err = h.initiativeService.SoftDeleteInitiative(ctx, initiativeID, userID)
+	if err != nil {
+		if errors.Is(err, domain.ErrForbidden) {
+			logger.Warn("forbidden delete initiative", "id", initiativeID, "userID", userID, "requestId", requestID)
+			writeErrorResponse(w, requestID, http.StatusForbidden, "FORBIDDEN", "Недостаточно прав")
+			return
+		}
+		if errors.Is(err, domain.ErrInitiativeNotFound) {
+			writeErrorResponse(w, requestID, http.StatusNotFound, "NOT_FOUND", "Initiative not found")
+			return
+		}
+		logger.Error("failed to delete initiative", "error", err, "id", initiativeID, "requestId", requestID)
+		writeErrorResponse(w, requestID, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to delete initiative")
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // ListInitiatives handles GET /initiatives (TK-005)
@@ -216,6 +261,10 @@ func (h *InitiativeHandlers) ListInitiatives(w http.ResponseWriter, r *http.Requ
 	if filter == "" {
 		filter = "all"
 	}
+	sort := q.Get("sort")
+	if sort == "" {
+		sort = "weight"
+	}
 	limit := 20
 	if v := q.Get("limit"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil {
@@ -229,7 +278,7 @@ func (h *InitiativeHandlers) ListInitiatives(w http.ResponseWriter, r *http.Requ
 		}
 	}
 
-	items, total, err := h.initiativeService.ListInitiatives(ctx, filter, limit, offset, userID)
+	items, total, err := h.initiativeService.ListInitiatives(ctx, filter, sort, limit, offset, userID)
 	if err != nil {
 		logger.Error("failed to list initiatives", "error", err, "requestId", requestID)
 		writeErrorResponse(w, requestID, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to list initiatives")
@@ -257,6 +306,72 @@ func (h *InitiativeHandlers) ListInitiatives(w http.ResponseWriter, r *http.Requ
 	w.Header().Set("X-Request-ID", requestID)
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(resp)
+}
+
+// VoteForInitiative handles POST /initiatives/{id}/vote
+func (h *InitiativeHandlers) VoteForInitiative(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	logger := telemetry.LoggerFromContext(ctx)
+	requestID := middleware.RequestIDFromContext(ctx)
+
+	// Get user ID from JWT context
+	userID := middleware.UserIDFromContext(ctx)
+	if userID == uuid.Nil {
+		logger.Warn("unauthorized access to vote", "requestId", requestID)
+		writeErrorResponse(w, requestID, http.StatusUnauthorized, "UNAUTHORIZED", "Authorization required")
+		return
+	}
+
+	// Parse initiative ID from URL
+	initiativeIDStr := chi.URLParam(r, "id")
+	if initiativeIDStr == "" {
+		logger.Warn("missing initiative ID in vote URL", "requestId", requestID)
+		writeErrorResponse(w, requestID, http.StatusBadRequest, "INVALID_ID", "Initiative ID is required")
+		return
+	}
+
+	initiativeID, err := uuid.Parse(initiativeIDStr)
+	if err != nil {
+		logger.Warn("invalid initiative ID format for vote", "id", initiativeIDStr, "error", err, "requestId", requestID)
+		writeErrorResponse(w, requestID, http.StatusBadRequest, "INVALID_ID", "Invalid initiative ID format")
+		return
+	}
+
+	// Parse request body
+	var req domain.VoteRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		logger.Warn("invalid vote request body", "error", err, "requestId", requestID)
+		writeErrorResponse(w, requestID, http.StatusBadRequest, "INVALID_JSON", "Invalid JSON in request body")
+		return
+	}
+
+	// Process the vote
+	initiative, err := h.voteService.VoteForInitiative(ctx, initiativeID, &req, userID)
+	if err != nil {
+		if errors.Is(err, domain.ErrInitiativeNotFound) {
+			logger.Warn("initiative not found for vote", "id", initiativeID, "userID", userID, "requestId", requestID)
+			writeErrorResponse(w, requestID, http.StatusNotFound, "NOT_FOUND", "Initiative not found")
+			return
+		}
+		var vErr domain.ValidationError
+		if errors.As(err, &vErr) {
+			logger.Warn("validation error in vote", "error", vErr, "id", initiativeID, "requestId", requestID)
+			writeErrorResponse(w, requestID, http.StatusBadRequest, "VALIDATION_ERROR", vErr.Error())
+			return
+		}
+
+		logger.Error("failed to process vote", "error", err, "id", initiativeID, "userID", userID, "requestId", requestID)
+		writeErrorResponse(w, requestID, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to process vote")
+		return
+	}
+
+	logger.Info("vote processed", "id", initiativeID, "userID", userID, "value", req.Value, "requestId", requestID)
+
+	// Return updated initiative
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", requestID)
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(initiative)
 }
 
 // writeErrorResponse writes standardized error response according to OpenAPI spec

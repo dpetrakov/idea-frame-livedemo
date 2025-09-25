@@ -2,6 +2,9 @@ export interface User {
   id: string;
   login: string;
   displayName: string;
+  isAdmin: boolean;
+  email?: string;
+  emailVerifiedAt?: string | null;
   createdAt: string;
 }
 
@@ -14,6 +17,8 @@ export interface AuthResponse {
 export interface RegisterRequest {
   login: string;
   displayName: string;
+  email: string;
+  emailCode: string;
   password: string;
   confirmPassword: string;
 }

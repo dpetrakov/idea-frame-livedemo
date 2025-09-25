@@ -7,8 +7,10 @@ interface AuthContextType {
   user: User | null;
   isLoading: boolean;
   isAuthenticated: boolean;
+  isAdmin: boolean;
   login: (data: LoginRequest) => Promise<void>;
   register: (data: RegisterRequest) => Promise<void>;
+  requestEmailCode: (email: string) => Promise<void>;
   logout: () => void;
 }
 
@@ -50,6 +52,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(response.user);
   }, []);
 
+  const requestEmailCode = useCallback(async (email: string) => {
+    await authApi.requestEmailCode(email);
+  }, []);
+
   const logout = useCallback(() => {
     localStorage.removeItem('token');
     apiClient.setToken(null);
@@ -60,8 +66,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     user,
     isLoading,
     isAuthenticated: !!user,
+    isAdmin: !!user?.isAdmin,
     login,
     register,
+    requestEmailCode,
     logout,
   };
 

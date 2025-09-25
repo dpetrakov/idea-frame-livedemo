@@ -17,6 +17,10 @@ export interface Initiative {
   speed?: number | null; // 1-5
   cost?: number | null;  // 1-5
   weight: number;        // Вычисляемый вес
+  upVotes: number;       // Количество голосов "вверх"
+  downVotes: number;     // Количество голосов "вниз"
+  voteScore: number;     // upVotes - downVotes
+  currentUserVote: number; // 1, -1, или 0 (нет голоса)
   commentsCount: number; // Количество комментариев
   createdAt: string;     // ISO datetime
   updatedAt: string;     // ISO datetime
@@ -56,6 +60,11 @@ export interface CommentsList {
   total: number;
   limit: number;
   offset: number;
+}
+
+// Голосование
+export interface VoteRequest {
+  value: -1 | 0 | 1; // -1 (down), 0 (remove), 1 (up)
 }
 
 // Вспомогательные типы для UI

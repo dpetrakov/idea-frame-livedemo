@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/ideaframe/backend/internal/config"
 	"github.com/ideaframe/backend/internal/domain"
 	"github.com/ideaframe/backend/internal/repo"
 )
@@ -17,15 +18,19 @@ import (
 type InitiativeService struct {
 	initiativeRepo *repo.InitiativeRepository
 	userRepo       *repo.UserRepository
+	voteRepo       *repo.VoteRepository
 	logger         *slog.Logger
+	cfg            *config.Config
 }
 
 // NewInitiativeService creates new initiative service
-func NewInitiativeService(initiativeRepo *repo.InitiativeRepository, userRepo *repo.UserRepository, logger *slog.Logger) *InitiativeService {
+func NewInitiativeService(initiativeRepo *repo.InitiativeRepository, userRepo *repo.UserRepository, voteRepo *repo.VoteRepository, logger *slog.Logger, cfg *config.Config) *InitiativeService {
 	return &InitiativeService{
 		initiativeRepo: initiativeRepo,
 		userRepo:       userRepo,
+		voteRepo:       voteRepo,
 		logger:         logger,
+		cfg:            cfg,
 	}
 }
 
@@ -44,9 +49,9 @@ func (s *InitiativeService) CreateInitiative(ctx context.Context, req *domain.In
 		return nil, fmt.Errorf("create initiative: %w", err)
 	}
 
-	s.logger.Info("initiative created successfully", 
-		"id", initiative.ID, 
-		"authorID", authorID, 
+	s.logger.Info("initiative created successfully",
+		"id", initiative.ID,
+		"authorID", authorID,
 		"title", initiative.Title,
 		"weight", initiative.Weight)
 
@@ -55,8 +60,8 @@ func (s *InitiativeService) CreateInitiative(ctx context.Context, req *domain.In
 
 // GetInitiativeByID retrieves initiative by ID
 func (s *InitiativeService) GetInitiativeByID(ctx context.Context, id uuid.UUID, userID uuid.UUID) (*domain.Initiative, error) {
-	// Get initiative from repository
-	initiative, err := s.initiativeRepo.GetByID(ctx, id)
+	// Get initiative from repository with vote aggregates
+	initiative, err := s.initiativeRepo.GetByIDWithVotes(ctx, id, userID, s.voteRepo)
 	if err != nil {
 		if err == domain.ErrInitiativeNotFound {
 			s.logger.Warn("initiative not found", "id", id, "userID", userID)
@@ -112,6 +117,12 @@ func (s *InitiativeService) UpdateInitiative(ctx context.Context, id uuid.UUID, 
 		return nil, err
 	}
 
+	// Проверяем права: изменение value/speed/cost/assigneeId только для админов
+	if (updates.Value != nil || updates.Speed != nil || updates.Cost != nil || updates.AssigneeID.Present) && !s.isAdminByUserID(ctx, userID) {
+		s.logger.Warn("forbidden update of admin fields", "initiativeId", id, "actorId", userID)
+		return nil, domain.ErrForbidden
+	}
+
 	// Обработка assigneeId (валидация формата и существования пользователя)
 	var newAssigneeID *uuid.UUID
 	if updates.AssigneeID.Present {
@@ -139,7 +150,7 @@ func (s *InitiativeService) UpdateInitiative(ctx context.Context, id uuid.UUID, 
 	}
 
 	// Если нет изменений — no-op, возвращаем текущую
-noAssigneeChange := !updates.AssigneeID.Present
+	noAssigneeChange := !updates.AssigneeID.Present
 	noTitle := updates.Title == nil
 	noDesc := updates.Description == nil
 	if noTitle && noDesc && updates.Value == nil && updates.Speed == nil && updates.Cost == nil && noAssigneeChange {
@@ -157,19 +168,39 @@ noAssigneeChange := !updates.AssigneeID.Present
 	}
 
 	// Логируем изменённые поля и новый вес
-changed := make([]string, 0, 6)
-	if updates.Title != nil { changed = append(changed, "title") }
-	if updates.Description != nil { changed = append(changed, "description") }
-	if updates.Value != nil { changed = append(changed, "value") }
-	if updates.Speed != nil { changed = append(changed, "speed") }
-	if updates.Cost != nil { changed = append(changed, "cost") }
-	if updates.AssigneeID.Present { changed = append(changed, "assigneeId") }
+	changed := make([]string, 0, 6)
+	if updates.Title != nil {
+		changed = append(changed, "title")
+	}
+	if updates.Description != nil {
+		changed = append(changed, "description")
+	}
+	if updates.Value != nil {
+		changed = append(changed, "value")
+	}
+	if updates.Speed != nil {
+		changed = append(changed, "speed")
+	}
+	if updates.Cost != nil {
+		changed = append(changed, "cost")
+	}
+	if updates.AssigneeID.Present {
+		changed = append(changed, "assigneeId")
+	}
 
 	// Лог смены ответственного
 	if updates.AssigneeID.Present {
 		var oldID, newID string
-		if current.AssigneeID != nil { oldID = current.AssigneeID.String() } else { oldID = "null" }
-		if newAssigneeID != nil { newID = newAssigneeID.String() } else { newID = "null" }
+		if current.AssigneeID != nil {
+			oldID = current.AssigneeID.String()
+		} else {
+			oldID = "null"
+		}
+		if newAssigneeID != nil {
+			newID = newAssigneeID.String()
+		} else {
+			newID = "null"
+		}
 		s.logger.Info("assignee changed",
 			"initiativeId", id,
 			"oldAssigneeId", oldID,
@@ -188,14 +219,57 @@ changed := make([]string, 0, 6)
 	return updated, nil
 }
 
-// ListInitiatives returns initiatives list (TK-005)
-func (s *InitiativeService) ListInitiatives(ctx context.Context, filter string, limit, offset int, userID uuid.UUID) ([]*domain.Initiative, int, error) {
+// SoftDeleteInitiative логическое удаление инициативы (только админ)
+func (s *InitiativeService) SoftDeleteInitiative(ctx context.Context, id uuid.UUID, actorID uuid.UUID) error {
+	if !s.isAdminByUserID(ctx, actorID) {
+		s.logger.Warn("forbidden delete initiative", "initiativeId", id, "actorId", actorID)
+		return domain.ErrForbidden
+	}
+
+	deleted, err := s.initiativeRepo.SoftDelete(ctx, id)
+	if err != nil {
+		if err == domain.ErrInitiativeNotFound {
+			return domain.ErrInitiativeNotFound
+		}
+		return fmt.Errorf("soft delete initiative: %w", err)
+	}
+	if deleted {
+		s.logger.Info("initiative soft-deleted", "initiativeId", id, "actorId", actorID)
+	} else {
+		s.logger.Info("initiative already soft-deleted", "initiativeId", id, "actorId", actorID)
+	}
+	return nil
+}
+
+// isAdminByUserID возвращает true, если пользователь с данным ID является админом по email
+func (s *InitiativeService) isAdminByUserID(ctx context.Context, userID uuid.UUID) bool {
+	u, err := s.userRepo.GetByID(ctx, userID)
+	if err != nil || u == nil {
+		return false
+	}
+	e := strings.ToLower(strings.TrimSpace(u.Email))
+	for _, a := range s.cfg.AdminEmails {
+		if e == a {
+			return true
+		}
+	}
+	return false
+}
+
+// ListInitiatives returns initiatives list (TK-005, TK-009)
+func (s *InitiativeService) ListInitiatives(ctx context.Context, filter string, sort string, limit, offset int, userID uuid.UUID) ([]*domain.Initiative, int, error) {
 	// Нормализация параметров
 	switch filter {
 	case "mineCreated", "assignedToMe", "all":
 		// ok
 	default:
 		filter = "all"
+	}
+	switch sort {
+	case "weight", "votes":
+		// ok
+	default:
+		sort = "weight"
 	}
 	if limit <= 0 {
 		limit = 20
@@ -207,7 +281,7 @@ func (s *InitiativeService) ListInitiatives(ctx context.Context, filter string, 
 		offset = 0
 	}
 
-	items, total, err := s.initiativeRepo.List(ctx, filter, limit, offset, userID)
+	items, total, err := s.initiativeRepo.List(ctx, filter, sort, limit, offset, userID, s.voteRepo)
 	if err != nil {
 		return nil, 0, fmt.Errorf("list initiatives: %w", err)
 	}

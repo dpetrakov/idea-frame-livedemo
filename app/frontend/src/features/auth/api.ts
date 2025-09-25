@@ -13,4 +13,8 @@ export const authApi = {
   async getCurrentUser(): Promise<User> {
     return apiClient.get<User>('/v1/users/me');
   },
+
+  async requestEmailCode(email: string): Promise<void> {
+    await apiClient.post<void>('/v1/auth/request-email-code', { email });
+  },
 };

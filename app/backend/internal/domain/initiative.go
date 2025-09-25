@@ -14,20 +14,24 @@ var ErrInitiativeNotFound = errors.New("initiative not found")
 
 // Initiative represents a domain initiative entity
 type Initiative struct {
-	ID           uuid.UUID  `json:"id"`
-	Title        string     `json:"title"`
-	Description  *string    `json:"description"`
-	AuthorID     uuid.UUID  `json:"authorId"`
-	Author       User       `json:"author"`
-	AssigneeID   *uuid.UUID `json:"assigneeId"`
-	Assignee     *User      `json:"assignee"`
-	Value        *int       `json:"value"`
-	Speed        *int       `json:"speed"`
-	Cost         *int       `json:"cost"`
-	Weight       float64    `json:"weight"`
-	CommentsCount int       `json:"commentsCount"`
-	CreatedAt    time.Time  `json:"createdAt"`
-	UpdatedAt    time.Time  `json:"updatedAt"`
+	ID              uuid.UUID  `json:"id"`
+	Title           string     `json:"title"`
+	Description     *string    `json:"description"`
+	AuthorID        uuid.UUID  `json:"authorId"`
+	Author          User       `json:"author"`
+	AssigneeID      *uuid.UUID `json:"assigneeId"`
+	Assignee        *User      `json:"assignee"`
+	Value           *int       `json:"value"`
+	Speed           *int       `json:"speed"`
+	Cost            *int       `json:"cost"`
+	Weight          float64    `json:"weight"`
+	UpVotes         int        `json:"upVotes"`
+	DownVotes       int        `json:"downVotes"`
+	VoteScore       int        `json:"voteScore"`
+	CurrentUserVote int        `json:"currentUserVote"` // 1, -1, или 0 (нет голоса)
+	CommentsCount   int        `json:"commentsCount"`
+	CreatedAt       time.Time  `json:"createdAt"`
+	UpdatedAt       time.Time  `json:"updatedAt"`
 }
 
 // InitiativeCreate represents data for creating a new initiative
@@ -50,13 +54,26 @@ type InitiativeUpdate struct {
 	AssigneeID  OptionalUUID `json:"assigneeId"`
 }
 
+// VoteRequest represents a voting request
+type VoteRequest struct {
+	Value int `json:"value"` // -1 (down), 0 (remove), 1 (up)
+}
+
+// Validate validates vote request
+func (vr *VoteRequest) Validate() error {
+	if vr.Value != -1 && vr.Value != 0 && vr.Value != 1 {
+		return errors.New("value must be -1, 0, or 1")
+	}
+	return nil
+}
+
 // Validate validates initiative creation data
 func (ic *InitiativeCreate) Validate() error {
 	// Title validation
 	if strings.TrimSpace(ic.Title) == "" {
 		return errors.New("title is required")
 	}
-	
+
 	if utf8.RuneCountInString(ic.Title) > 140 {
 		return errors.New("title must not exceed 140 characters")
 	}

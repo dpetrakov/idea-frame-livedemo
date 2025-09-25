@@ -50,7 +50,17 @@ export class ApiClient {
       throw error;
     }
 
-    return response.json();
+    // Handle empty/204 responses
+    if (response.status === 204 || response.status === 205) {
+      return undefined as unknown as T;
+    }
+    const contentType = response.headers.get('content-type') || '';
+    if (contentType.includes('application/json')) {
+      return response.json();
+    }
+    // Fallback: return text
+    const text = await response.text();
+    return text as unknown as T;
   }
 
   async get<T>(path: string): Promise<T> {

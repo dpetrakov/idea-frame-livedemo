@@ -3,26 +3,43 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
+	"net/mail"
+	"strings"
 	"time"
-	
+
 	"github.com/google/uuid"
+	"github.com/ideaframe/backend/internal/config"
 	"github.com/ideaframe/backend/internal/domain"
 	"github.com/ideaframe/backend/internal/repo"
 	"github.com/ideaframe/backend/internal/security"
+	"github.com/ideaframe/backend/internal/telemetry"
 )
 
 // AuthService сервис аутентификации
 type AuthService struct {
 	userRepo   *repo.UserRepository
+	emailRepo  *repo.EmailCodeRepository
 	jwtManager *security.JWTManager
+	cfg        *config.Config
+	mailSender MailSender
 }
 
 // NewAuthService создаёт новый сервис аутентификации
-func NewAuthService(db *repo.Database, jwtSecret string, jwtExpiration time.Duration) *AuthService {
-	return &AuthService{
+func NewAuthService(db *repo.Database, cfg *config.Config) *AuthService {
+	s := &AuthService{
 		userRepo:   repo.NewUserRepository(db),
-		jwtManager: security.NewJWTManager(jwtSecret, jwtExpiration),
+		emailRepo:  NewEmailCodeRepo(db),
+		jwtManager: security.NewJWTManager(cfg.JWTSecret, cfg.JWTExpiration),
+		cfg:        cfg,
 	}
+	// Используем только SMTP
+	s.mailSender = NewSMTPSender(cfg)
+	return s
+}
+
+func NewEmailCodeRepo(db *repo.Database) *repo.EmailCodeRepository {
+	return repo.NewEmailCodeRepository(db.Pool)
 }
 
 // Register регистрация нового пользователя
@@ -31,23 +48,41 @@ func (s *AuthService) Register(ctx context.Context, req *domain.UserRegisterRequ
 	if err := req.Validate(); err != nil {
 		return nil, err
 	}
-	
+
+	// Нормализуем email
+	email := strings.ToLower(strings.TrimSpace(req.Email))
+	if _, err := mail.ParseAddress(email); err != nil {
+		return nil, domain.ErrInvalidField("email", "invalid email format")
+	}
+	if !strings.HasSuffix(email, "@"+s.cfg.AxenixEmailDomain) {
+		return nil, domain.ErrInvalidField("email", fmt.Sprintf("email domain must be %s", s.cfg.AxenixEmailDomain))
+	}
+	// Проверка кода
+	ok, err := s.emailRepo.FindValid(ctx, email, req.EmailCode)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, domain.ErrInvalidInput("invalid or expired email code")
+	}
+
 	// Хэширование пароля
 	passwordHash, err := security.HashPassword(req.Password)
 	if err != nil {
 		return nil, errors.New("failed to hash password")
 	}
-	
+
 	// Создание пользователя
 	now := time.Now()
 	user := &domain.User{
 		Login:        req.Login,
 		DisplayName:  req.DisplayName,
+		Email:        email,
 		PasswordHash: passwordHash,
 		CreatedAt:    now,
 		UpdatedAt:    now,
 	}
-	
+
 	// Сохранение в БД
 	if err := s.userRepo.Create(ctx, user); err != nil {
 		if errors.Is(err, domain.ErrConflict) {
@@ -55,21 +90,81 @@ func (s *AuthService) Register(ctx context.Context, req *domain.UserRegisterRequ
 		}
 		return nil, err
 	}
-	
+
+	// Помечаем код использованным и верифицируем e-mail
+	if err := s.emailRepo.MarkUsed(ctx, email, req.EmailCode); err != nil {
+		return nil, err
+	}
+	now2 := time.Now()
+	user.EmailVerifiedAt = &now2
+
 	// Генерация токена
 	token, expiresAt, err := s.jwtManager.GenerateToken(user.ID, user.Login, user.DisplayName)
 	if err != nil {
 		return nil, errors.New("failed to generate token")
 	}
-	
+
 	// Очистка пароля из ответа
 	user.PasswordHash = ""
-	
+	// Вычисляем isAdmin
+	user.IsAdmin = s.isAdminEmail(user.Email)
+
 	return &domain.AuthResponse{
 		User:      user,
 		Token:     token,
 		ExpiresAt: expiresAt,
 	}, nil
+}
+
+// RequestEmailCode обрабатывает запрос одноразового кода подтверждения e-mail
+func (s *AuthService) RequestEmailCode(ctx context.Context, email string, requestedIP string) error {
+	email = strings.ToLower(strings.TrimSpace(email))
+	if email == "" {
+		return domain.ErrInvalidField("email", "email is required")
+	}
+	if _, err := mail.ParseAddress(email); err != nil {
+		return domain.ErrInvalidField("email", "invalid email format")
+	}
+	if !strings.HasSuffix(email, "@"+s.cfg.AxenixEmailDomain) {
+		return domain.ErrInvalidField("email", fmt.Sprintf("email domain must be %s", s.cfg.AxenixEmailDomain))
+	}
+
+	// Rate limit: не чаще 1/мин по адресу
+	last, err := s.emailRepo.LastRequestAt(ctx, email)
+	if err != nil {
+		return err
+	}
+	if time.Since(last) < time.Minute {
+		return domain.ErrInvalidInput("too many requests; please try again later")
+	}
+
+	// Генерация 6-значного кода
+	code := generateNumericCode(6)
+	ttl := time.Duration(s.cfg.EmailCodesTTLMinutes) * time.Minute
+	if err := s.emailRepo.Create(ctx, email, code, ttl, requestedIP); err != nil {
+		return err
+	}
+
+	// Отправка письма через mail service
+	if err := s.mailSender.SendVerificationCode(ctx, email, code); err != nil {
+		// Логируем подробности ошибки для диагностики
+		telemetry.LoggerFromContext(ctx).Error("send verification email failed", "error", err)
+		return domain.ErrInvalidInput("failed to send e-mail with code")
+	}
+	return nil
+}
+
+func generateNumericCode(n int) string {
+	// Псевдо простой генератор; заменить на криптостойкий при необходимости
+	now := time.Now().UnixNano()
+	s := fmt.Sprintf("%06d", int(now%1000000))
+	if len(s) > n {
+		return s[len(s)-n:]
+	}
+	if len(s) < n {
+		return strings.Repeat("0", n-len(s)) + s
+	}
+	return s
 }
 
 // Login вход пользователя
@@ -78,7 +173,7 @@ func (s *AuthService) Login(ctx context.Context, req *domain.UserLoginRequest) (
 	if err := req.Validate(); err != nil {
 		return nil, err
 	}
-	
+
 	// Поиск пользователя
 	user, err := s.userRepo.GetByLogin(ctx, req.Login)
 	if err != nil {
@@ -87,21 +182,23 @@ func (s *AuthService) Login(ctx context.Context, req *domain.UserLoginRequest) (
 		}
 		return nil, err
 	}
-	
+
 	// Проверка пароля
 	if !security.VerifyPassword(req.Password, user.PasswordHash) {
 		return nil, domain.ErrInvalidCredentials
 	}
-	
+
 	// Генерация токена
 	token, expiresAt, err := s.jwtManager.GenerateToken(user.ID, user.Login, user.DisplayName)
 	if err != nil {
 		return nil, errors.New("failed to generate token")
 	}
-	
+
 	// Очистка пароля из ответа
 	user.PasswordHash = ""
-	
+	// Вычисляем isAdmin
+	user.IsAdmin = s.isAdminEmail(user.Email)
+
 	return &domain.AuthResponse{
 		User:      user,
 		Token:     token,
@@ -115,9 +212,11 @@ func (s *AuthService) GetUserByID(ctx context.Context, id uuid.UUID) (*domain.Us
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Очистка пароля
 	user.PasswordHash = ""
+	// Вычисляем isAdmin
+	user.IsAdmin = s.isAdminEmail(user.Email)
 	return user, nil
 }
 
@@ -129,4 +228,15 @@ func (s *AuthService) ListUsers(ctx context.Context) ([]domain.UserBrief, error)
 // ValidateToken проверка токена
 func (s *AuthService) ValidateToken(token string) (*security.Claims, error) {
 	return s.jwtManager.ValidateToken(token)
+}
+
+// isAdminEmail проверяет, входит ли e-mail пользователя в список админов
+func (s *AuthService) isAdminEmail(email string) bool {
+	e := strings.ToLower(strings.TrimSpace(email))
+	for _, admin := range s.cfg.AdminEmails {
+		if e == admin {
+			return true
+		}
+	}
+	return false
 }

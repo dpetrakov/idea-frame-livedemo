@@ -4,14 +4,16 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { InitiativeCard } from '../features/initiatives/components/InitiativeCard';
-import { getInitiativeById, updateInitiative, getComments, addComment, getUsers } from '../features/initiatives/api';
+import { getInitiativeById, updateInitiative, getComments, addComment, getUsers, deleteInitiative } from '../features/initiatives/api';
 import { Card } from '../shared/ui/Card';
 import { Button } from '../shared/ui/Button';
 import type { Initiative, ApiError, LoadingState, InitiativeUpdate, UserBrief } from '../features/initiatives/types';
+import { useAuth } from '../features/auth/useAuth';
 
 export function InitiativeDetails() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { user } = useAuth();
   
   const [initiative, setInitiative] = useState<Initiative | null>(null);
   const [metaEditing, setMetaEditing] = useState(false);
@@ -123,6 +125,19 @@ export function InitiativeDetails() {
     setMetaEditing(true);
     setMetaSaved(false);
     setMetaError(null);
+  };
+
+  const handleDelete = async () => {
+    if (!id) return;
+    const confirmed = window.confirm('Удалить инициативу? Это действие можно отменить только через БД.');
+    if (!confirmed) return;
+    try {
+      await deleteInitiative(id);
+      navigate('/');
+    } catch (err) {
+      const apiError = err as ApiError;
+      alert(apiError?.message || 'Не удалось удалить инициативу');
+    }
   };
 
   // Состояние загрузки
@@ -304,6 +319,10 @@ export function InitiativeDetails() {
     }
   };
 
+  const handleVoteChange = (updatedInitiative: Initiative) => {
+    setInitiative(updatedInitiative);
+  };
+
   return (
     <div style={{
       maxWidth: '800px',
@@ -315,18 +334,12 @@ export function InitiativeDetails() {
       <header style={{ 
         marginBottom: 'var(--space-6)',
         display: 'flex',
-        justifyContent: 'space-between',
+        justifyContent: 'flex-start',
         alignItems: 'center'
       }}>
         <Button variant="ghost" onClick={handleBack}>
           ← Назад к списку
         </Button>
-        
-        <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
-          <Button variant="ghost" onClick={handleEdit}>
-            ✏️ Редактировать
-          </Button>
-        </div>
       </header>
 
       {/* Основной контент */}
@@ -334,6 +347,10 @@ export function InitiativeDetails() {
         <InitiativeCard 
           initiative={initiative} 
           showFullDescription={true}
+          onEdit={handleEdit}
+          onDelete={user?.isAdmin ? handleDelete : undefined}
+          canEditAdminFields={!!user?.isAdmin}
+          onVoteChange={handleVoteChange}
         />
 
         {/* Редактирование названия и описания */}
@@ -394,6 +411,7 @@ export function InitiativeDetails() {
         )}
 
         {/* TK-006: Выбор ответственного */}
+        {user?.isAdmin && (
         <section id="assignee-editor" style={{ marginTop: 'var(--space-6)' }}>
           <Card style={{ padding: 'var(--space-4)' }}>
             <h3 style={{ marginTop: 0, marginBottom: 'var(--space-4)' }}>Ответственный</h3>
@@ -422,8 +440,10 @@ export function InitiativeDetails() {
             </div>
           </Card>
         </section>
+        )}
 
         {/* Редактор атрибутов TK-003 */}
+        {user?.isAdmin && (
         <section id="attributes-editor" style={{ marginTop: 'var(--space-6)' }}>
           <Card style={{ padding: 'var(--space-4)' }}>
             <h3 style={{ marginTop: 0, marginBottom: 'var(--space-4)' }}>Оценка инициативы</h3>
@@ -495,6 +515,7 @@ export function InitiativeDetails() {
             </div>
           </Card>
         </section>
+        )}
       </main>
 
       {/* Комментарии TK-004 */}

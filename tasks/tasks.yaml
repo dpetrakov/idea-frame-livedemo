@@ -246,3 +246,135 @@ tasks:
         role: DV
         title: Индексы и нагрузочное тестирование запроса списка
         status: done
+
+  - id: TK-007
+    title: V2 — Верификация e‑mail и доменное ограничение регистрации
+    order: 70
+    status: planned
+    frRefs: [V2-EmailVerification, V2-RegistrationDomain]
+    context:
+      prd: "docs/prd.md#9.4-Регистрация-только-axenix.pro--подтверждение-e‑mail-кодом"
+      architecture: "docs/architecture.md#аутентификация-и-e-mail-верификация" 
+      dbml: "db/schema.dbml#email_codes"
+      openapi: "docs/openapi.yaml#/paths/~1auth~1request-email-code"
+      deployment: "docs/deployment.md#переменные-окружения"
+    acceptanceCriteria:
+      - text: "В OpenAPI описаны POST /auth/request-email-code и расширенный /auth/register (email, emailCode)"
+        done: true
+      - text: "В DBML/миграциях есть таблица email_codes с TTL полями и индексами"
+        done: true
+      - text: "На сервере жёсткая проверка домена e‑mail (AXENIX_EMAIL_DOMAIN) и rate‑limit на запрос кода"
+        done: false
+      - text: "Регистрация возможна только с валидным кодом; неверный/просроченный код отклоняется"
+        done: false
+      - text: "Отправка кода через Mailgun; секреты берутся из .env (MAILGUN_API_KEY/DOMAIN/FROM)"
+        done: false
+      - text: "Фронтенд: в форме регистрации поля e‑mail, кнопка 'Получить код', поле кода и обработка ошибок"
+        done: false
+    subtasks:
+      - id: TK-007/AN
+        role: AN
+        title: Спецификация потока регистрации с подтверждением e‑mail
+        status: done
+        outputs:
+          - docs/specs/TK-007.md
+      - id: TK-007/BE
+        role: BE
+        title: Эндпоинт /auth/request-email-code и серверная валидация email+code
+        status: planned
+      - id: TK-007/FE
+        role: FE
+        title: Обновление формы регистрации (email, запрос и ввод кода)
+        status: planned
+      - id: TK-007/DV
+        role: DV
+        title: Переменные окружения Mailgun и домена, док обновления деплоя
+        status: planned
+
+  - id: TK-008
+    title: V2 — Роли и права админов; логическое удаление инициатив
+    order: 80
+    status: spec-prepared
+    frRefs: [V2-Roles, V2-AdminDelete, V2-AdminUpdateFields]
+    context:
+      prd: "docs/prd.md#9.1-Роли-и-разграничение-прав"
+      architecture: "docs/architecture.md#авторизация-и-права"
+      dbml: "db/schema.dbml#initiatives"
+      openapi: "docs/openapi.yaml#/paths/~1initiatives~1{id}~1delete"
+      deployment: "docs/deployment.md#переменные-окружения"
+    acceptanceCriteria:
+      - text: "Профиль пользователя (GET /users/me) содержит isAdmin, определяемый по ADMIN_EMAILS"
+        done: false
+      - text: "PATCH /initiatives/{id}: поля assignee/value/speed/cost доступны только админу; non-admin получает 403"
+        done: false
+      - text: "DELETE /initiatives/{id}: логическое удаление (is_deleted=true) доступно только админу"
+        done: false
+      - text: "Удалённые инициативы отсутствуют в списках и по id отдают 404"
+        done: false
+      - text: "Фронтенд: не‑админ видит поля в режиме чтения; админ видит кнопку 'Удалить'"
+        done: false
+      - text: "ADMIN_EMAILS и связанные настройки берутся из .env; логи без утечки секретов"
+        done: false
+    subtasks:
+      - id: TK-008/AN
+        role: AN
+        title: Спецификация ролей и матрицы прав
+        status: done
+        outputs:
+          - docs/specs/TK-008.md
+      - id: TK-008/BE
+        role: BE
+        title: Авторизация по ролям, ограничение PATCH, реализация DELETE
+        status: planned
+      - id: TK-008/FE
+        role: FE
+        title: Read-only для не‑админов, UI удаления для админов
+        status: planned
+      - id: TK-008/DV
+        role: DV
+        title: Переменные окружения ADMIN_EMAILS и инструкции по развертыванию
+        status: planned
+
+  - id: TK-009
+    title: V2 — Голосование (up/down) и сортировка по голосам
+    order: 90
+    status: spec-prepared
+    frRefs: [V2-Voting, V2-SortByVotes]
+    context:
+      prd: "docs/prd.md#9.2-Голосование-за-инициативы"
+      architecture: "docs/architecture.md#агрегации-и-запросы"
+      dbml: "db/schema.dbml#initiative_votes"
+      openapi: "docs/openapi.yaml#/paths/~1initiatives~1{id}~1vote"
+      deployment: "docs/deployment.md#мониторинг-и-метрики"
+    acceptanceCriteria:
+      - text: "В OpenAPI описаны поля upVotes/downVotes/voteScore/currentUserVote и POST /initiatives/{id}/vote"
+        done: true
+      - text: "В DBML/миграциях есть initiative_votes с уникальным (initiative_id, user_id) и CHECK value IN (-1,1)"
+        done: true
+      - text: "POST /initiatives/{id}/vote: создание/изменение/снятие голоса, возврат обновлённой инициативы"
+        done: false
+      - text: "GET /initiatives поддерживает sort=votes; вторичная сортировка по дате"
+        done: false
+      - text: "Агрегаты голосов корректны и производительны; фильтруются удалённые инициативы"
+        done: false
+      - text: "Фронтенд: кнопки up/down, индикация текущего голоса, подсчёты и переключатель сортировки"
+        done: false
+    subtasks:
+      - id: TK-009/AN
+        role: AN
+        title: Спецификация голосования и агрегаций
+        status: done
+        outputs:
+          - docs/specs/TK-009.md
+      - id: TK-009/BE
+        role: BE
+        title: Эндпоинт голосования и агрегированные выборки списка
+        status: planned
+      - id: TK-009/FE
+        role: FE
+        title: UI голосования и сортировки по голосам
+        status: planned
+      - id: TK-009/DV
+        role: DV
+        title: Профилирование запросов и индексы под сортировку по голосам
+        status: planned

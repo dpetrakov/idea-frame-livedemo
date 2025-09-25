@@ -1,9 +1,9 @@
 openapi: "3.0.3"
 info:
-  title: "Idea Frame Livedemo API"
-  version: "1.0.0"
+  title: "MeetAx Next API"
+  version: "2.0.0"
   description: |
-    API для системы фрейминга портфеля инициатив
+    MeetAx Next — площадка, где рождаются и отбираются идеи для будущего развития MeetAx.
     
     Поддерживает:
     - Регистрацию и аутентификацию пользователей
@@ -14,8 +14,6 @@ info:
     - Фильтрацию и сортировку списка инициатив
 
 servers:
-  - url: "https://ideaframe.dimlight.online/api/v1"
-    description: "Production server"
   - url: "http://localhost:8080/api/v1"
     description: "Development server"
 
@@ -62,6 +60,8 @@ paths:
             example:
               login: "alex"
               displayName: "Alex K"
+              email: "alex@axenix.pro"
+              emailCode: "123456"
               password: "secure123"
               confirmPassword: "secure123"
       responses:
@@ -91,6 +91,32 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+
+  /auth/request-email-code:
+    post:
+      summary: "Запрос одноразового кода подтверждения e‑mail"
+      description: "Отправляет одноразовый код на указанный e‑mail (только домен @axenix.pro по умолчанию)"
+      tags: ["Auth"]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmailCodeRequest'
+            example:
+              email: "alex@axenix.pro"
+      responses:
+        '204':
+          description: "Код отправлен"
+        '400':
+          description: "Ошибка валидации (неверный e‑mail/домен)"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
 
   /auth/login:
     post:
@@ -180,6 +206,14 @@ paths:
             enum: [all, mineCreated, assignedToMe]
             default: all
           example: all
+        - name: sort
+          in: query
+          description: "Сортировка списка"
+          schema:
+            type: string
+            enum: [weight, votes]
+            default: weight
+          example: votes
         - name: limit
           in: query
           description: "Количество элементов (пагинация)"
@@ -222,6 +256,9 @@ paths:
                     cost: 2
                     weight: 3.83
                     commentsCount: 3
+                    upVotes: 10
+                    downVotes: 3
+                    voteScore: 7
                     createdAt: "2023-12-07T10:30:00Z"
                     updatedAt: "2023-12-07T11:15:00Z"
                 total: 1
@@ -342,8 +379,75 @@ paths:
                 $ref: '#/components/schemas/Error'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+
+    delete:
+      summary: "Логическое удаление инициативы"
+      description: "Пометить инициативу как удалённую (только администратор)"
+      tags: ["Initiatives"]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: "Идентификатор инициативы"
+          schema:
+            type: string
+            format: uuid
+          example: "5f3e6d4c-0d9e-5f0g-1g3e-4c5d6e7f8g9h"
+      responses:
+        '204':
+          description: "Инициатива помечена как удалённая"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /initiatives/{id}/vote:
+    post:
+      summary: "Голосование за инициативу"
+      description: "Отдать или снять голос: 1 — палец вверх, -1 — палец вниз, 0 — снять голос"
+      tags: ["Initiatives"]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: "Идентификатор инициативы"
+          schema:
+            type: string
+            format: uuid
+          example: "5f3e6d4c-0d9e-5f0g-1g3e-4c5d6e7f8g9h"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VoteRequest'
+            example:
+              value: 1
+      responses:
+        '200':
+          description: "Голос учтён; возвращается обновлённая инициатива"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Initiative'
+        '400':
+          description: "Ошибка валидации"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
 
   /initiatives/{id}/comments:
     get:
@@ -466,6 +570,16 @@ components:
             code: "UNAUTHORIZED"
             message: "Требуется авторизация"
             correlationId: "req_12345"
+    Forbidden:
+      description: "Доступ запрещён"
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: "FORBIDDEN"
+            message: "Недостаточно прав"
+            correlationId: "req_12347"
 
     NotFound:
       description: "Ресурс не найден"
@@ -477,6 +591,17 @@ components:
             code: "NOT_FOUND"
             message: "Инициатива не найдена"
             correlationId: "req_12346"
+
+    TooManyRequests:
+      description: "Слишком много запросов"
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: "RATE_LIMITED"
+            message: "Слишком много запросов, попробуйте позже"
+            correlationId: "req_12348"
 
   schemas:
     Error:
@@ -534,6 +659,8 @@ components:
       required:
         - login
         - displayName
+        - email
+        - emailCode
         - password
         - confirmPassword
       properties:
@@ -550,6 +677,17 @@ components:
           maxLength: 32
           description: "Отображаемое имя"
           example: "Alex K"
+        email:
+          type: string
+          format: email
+          description: "Корпоративный e‑mail (домен по умолчанию @axenix.pro)"
+          example: "alex@axenix.pro"
+        emailCode:
+          type: string
+          minLength: 6
+          maxLength: 6
+          description: "Одноразовый код подтверждения e‑mail"
+          example: "123456"
         password:
           type: string
           minLength: 8
@@ -599,6 +737,21 @@ components:
           type: string
           description: "Отображаемое имя"
           example: "Alex K"
+        email:
+          type: string
+          format: email
+          description: "E‑mail пользователя"
+          example: "alex@axenix.pro"
+        isAdmin:
+          type: boolean
+          description: "Признак администратора (определяется сервером)"
+          example: true
+        emailVerifiedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: "Момент подтверждения e‑mail"
+          example: "2023-12-07T10:25:00Z"
         createdAt:
           type: string
           format: date-time
@@ -714,6 +867,9 @@ components:
         - author
         - weight
         - commentsCount
+        - upVotes
+        - downVotes
+        - voteScore
         - createdAt
         - updatedAt
       properties:
@@ -764,6 +920,25 @@ components:
           format: float
           description: "Вычисляемый вес по формуле: (0.5*value + 0.3*speed - 0.2*cost) / сумме коэффициентов только по присутствующим атрибутам; округление до 2 знаков; при отсутствии всех атрибутов = 0.0"
           example: 3.83
+        upVotes:
+          type: integer
+          minimum: 0
+          description: "Количество голосов 'палец вверх'"
+          example: 10
+        downVotes:
+          type: integer
+          minimum: 0
+          description: "Количество голосов 'палец вниз'"
+          example: 3
+        voteScore:
+          type: integer
+          description: "Разница upVotes − downVotes"
+          example: 7
+        currentUserVote:
+          type: integer
+          nullable: true
+          description: "Текущий голос пользователя: 1, -1 или 0 (нет голоса)"
+          example: 1
         commentsCount:
           type: integer
           minimum: 0
@@ -808,6 +983,28 @@ components:
           minimum: 0
           description: "Смещение"
           example: 0
+
+    EmailCodeRequest:
+      type: object
+      required:
+        - email
+      properties:
+        email:
+          type: string
+          format: email
+          description: "E‑mail для отправки кода (сервер проверяет домен)"
+          example: "alex@axenix.pro"
+
+    VoteRequest:
+      type: object
+      required:
+        - value
+      properties:
+        value:
+          type: integer
+          enum: [-1, 0, 1]
+          description: "1 — палец вверх; -1 — палец вниз; 0 — снять голос"
+          example: 1
 
     CommentCreate:
       type: object

@@ -6,7 +6,7 @@ import { ApiError } from '../shared/lib/api-client';
 
 export function LoginPage() {
   const navigate = useNavigate();
-  const { login, register } = useAuth();
+  const { login, register, requestEmailCode } = useAuth();
   const [isRegister, setIsRegister] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>('');
@@ -14,6 +14,8 @@ export function LoginPage() {
   const [formData, setFormData] = useState({
     login: '',
     displayName: '',
+    email: '',
+    emailCode: '',
     password: '',
     confirmPassword: '',
   });
@@ -28,6 +30,8 @@ export function LoginPage() {
         await register({
           login: formData.login,
           displayName: formData.displayName,
+          email: formData.email,
+          emailCode: formData.emailCode,
           password: formData.password,
           confirmPassword: formData.confirmPassword,
         });
@@ -51,6 +55,24 @@ export function LoginPage() {
     setError('');
   };
 
+  const handleRequestCode = async () => {
+    setError('');
+    if (!formData.email) {
+      setError('Укажите e‑mail');
+      return;
+    }
+    try {
+      setLoading(true);
+      await requestEmailCode(formData.email);
+      setError('Код отправлен на указанный e‑mail');
+    } catch (err) {
+      const apiError = err as ApiError;
+      setError(apiError.message || 'Не удалось отправить код');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div
       style={{
@@ -65,10 +87,10 @@ export function LoginPage() {
       <Card style={{ width: '100%', maxWidth: '400px' }}>
         <div style={{ textAlign: 'center', marginBottom: 'var(--space-6)' }}>
           <h1 style={{ color: 'var(--color-highlight)', marginBottom: 'var(--space-2)' }}>
-            Idea Frame
+            MeetAx Next
           </h1>
           <p style={{ color: 'var(--color-text-muted)' }}>
-            Система фрейминга портфеля инициатив
+            Площадка, где рождаются и отбираются идеи для будущего развития MeetAx
           </p>
         </div>
 
@@ -135,6 +157,37 @@ export function LoginPage() {
               onChange={handleInputChange('displayName')}
               placeholder="Введите ваше имя"
             />
+          )}
+
+          {isRegister && (
+            <Input
+              label="Корпоративный e‑mail"
+              type="email"
+              required
+              value={formData.email}
+              onChange={handleInputChange('email')}
+              placeholder="name@axenix.pro"
+            />
+          )}
+
+          {isRegister && (
+            <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+              <div style={{ flex: 1 }}>
+                <Input
+                  label="Код из письма"
+                  type="text"
+                  required
+                  value={formData.emailCode}
+                  onChange={handleInputChange('emailCode')}
+                  placeholder="6 цифр"
+                />
+              </div>
+              <div style={{ alignSelf: 'flex-end' }}>
+                <Button type="button" onClick={handleRequestCode} loading={loading}>
+                  Получить код
+                </Button>
+              </div>
+            </div>
           )}
 
           <Input

@@ -12,7 +12,13 @@ const FILTERS = [
   { key: 'assignedToMe', label: 'Назначено на меня' },
 ] as const;
 
+const SORTS = [
+  { key: 'weight', label: 'По весу' },
+  { key: 'votes', label: 'По голосам' },
+] as const;
+
 type FilterKey = typeof FILTERS[number]['key'];
+type SortKey = typeof SORTS[number]['key'];
 
 export function HomePage() {
   const { user, logout } = useAuth();
@@ -22,6 +28,11 @@ export function HomePage() {
   const currentFilter = useMemo<FilterKey>(() => {
     const f = searchParams.get('filter') as FilterKey | null;
     return f && (FILTERS as any).some((x: any) => x.key === f) ? f : 'all';
+  }, [searchParams]);
+
+  const currentSort = useMemo<SortKey>(() => {
+    const s = searchParams.get('sort') as SortKey | null;
+    return s && (SORTS as any).some((x: any) => x.key === s) ? s : 'weight';
   }, [searchParams]);
 
   const [items, setItems] = useState<Initiative[]>([]);
@@ -36,7 +47,7 @@ export function HomePage() {
     navigate('/initiatives/new');
   };
 
-  // Загрузка первой страницы при смене фильтра
+  // Загрузка первой страницы при смене фильтра или сортировки
   useEffect(() => {
     let cancelled = false;
     async function loadFirstPage() {
@@ -45,7 +56,12 @@ export function HomePage() {
       setItems([]);
       setOffset(0);
       try {
-        const res: InitiativesList = await getInitiativesList({ filter: currentFilter, limit: limit, offset: 0 });
+        const res: InitiativesList = await getInitiativesList({ 
+          filter: currentFilter, 
+          sort: currentSort,
+          limit: limit, 
+          offset: 0 
+        });
         if (cancelled) return;
         setItems(res.items);
         setTotal(res.total);
@@ -59,7 +75,7 @@ export function HomePage() {
     }
     loadFirstPage();
     return () => { cancelled = true; };
-  }, [currentFilter, limit]);
+  }, [currentFilter, currentSort, limit]);
 
   // Догрузка следующей страницы
   const loadMore = async () => {
@@ -67,7 +83,12 @@ export function HomePage() {
     setLoadingMore(true);
     setError(null);
     try {
-      const res = await getInitiativesList({ filter: currentFilter, limit, offset });
+      const res = await getInitiativesList({ 
+        filter: currentFilter, 
+        sort: currentSort, 
+        limit, 
+        offset 
+      });
       setItems(prev => [...prev, ...res.items]);
       setOffset(prev => prev + res.items.length);
       setTotal(res.total);
@@ -85,6 +106,21 @@ export function HomePage() {
       // Сбрасываем пагинацию
       return sp;
     });
+  };
+
+  const onChangeSort = (key: SortKey) => {
+    setSearchParams(prev => {
+      const sp = new URLSearchParams(prev);
+      if (key === 'weight') sp.delete('sort'); else sp.set('sort', key);
+      // Сбрасываем пагинацию
+      return sp;
+    });
+  };
+
+  const handleVoteChange = (updatedInitiative: Initiative) => {
+    setItems(prev => prev.map(item => 
+      item.id === updatedInitiative.id ? updatedInitiative : item
+    ));
   };
 
   const hasMore = items.length < total;
@@ -111,7 +147,7 @@ export function HomePage() {
           }}
         >
           <h1 style={{ color: 'var(--color-highlight)', fontSize: 'var(--fs-xl)', margin: 0 }}>
-            Idea Frame
+            MeetAx Next
           </h1>
           <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-4)' }}>
             <span>Привет, {user?.displayName}!</span>
@@ -143,25 +179,60 @@ export function HomePage() {
           </Button>
         </div>
 
-        {/* Табы фильтров */}
-        <div style={{ display: 'flex', gap: 'var(--space-2)', marginBottom: 'var(--space-4)' }}>
-          {FILTERS.map(f => (
-            <button
-              key={f.key}
-              onClick={() => onChangeFilter(f.key)}
-              style={{
-                background: currentFilter === f.key ? 'var(--color-highlight)' : 'transparent',
-                color: currentFilter === f.key ? 'white' : 'var(--color-text)',
-                border: '1px solid var(--color-border)',
-                borderRadius: 'var(--radius)',
-                padding: '8px 12px',
-                fontWeight: 600,
-                cursor: 'pointer',
-              }}
-            >
-              {f.label}
-            </button>
-          ))}
+        {/* Табы фильтров и сортировки */}
+        <div style={{ 
+          display: 'flex', 
+          justifyContent: 'space-between', 
+          alignItems: 'center',
+          marginBottom: 'var(--space-4)',
+          flexWrap: 'wrap',
+          gap: 'var(--space-4)'
+        }}>
+          {/* Фильтры */}
+          <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+            {FILTERS.map(f => (
+              <button
+                key={f.key}
+                onClick={() => onChangeFilter(f.key)}
+                style={{
+                  background: currentFilter === f.key ? 'var(--color-highlight)' : 'transparent',
+                  color: currentFilter === f.key ? 'white' : 'var(--color-text)',
+                  border: '1px solid var(--color-border)',
+                  borderRadius: 'var(--radius)',
+                  padding: '8px 12px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Сортировка */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+            <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--color-text-muted)' }}>
+              Сортировка:
+            </span>
+            {SORTS.map(s => (
+              <button
+                key={s.key}
+                onClick={() => onChangeSort(s.key)}
+                style={{
+                  background: currentSort === s.key ? 'var(--color-highlight)' : 'transparent',
+                  color: currentSort === s.key ? 'white' : 'var(--color-text)',
+                  border: '1px solid var(--color-border)',
+                  borderRadius: 'var(--radius)',
+                  padding: '6px 12px',
+                  fontSize: 'var(--fs-sm)',
+                  fontWeight: 500,
+                  cursor: 'pointer',
+                }}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
         </div>
         
         {/* Состояние ошибки */}
@@ -227,8 +298,24 @@ export function HomePage() {
         {!loading && items.length > 0 && (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 'var(--space-4)' }}>
             {items.map(item => (
-              <div key={item.id} onClick={() => navigate(`/initiatives/${item.id}`)} style={{ cursor: 'pointer' }}>
-                <InitiativeCard initiative={item} showFullDescription={false} />
+              <div 
+                key={item.id} 
+                style={{ position: 'relative' }}
+                onClick={(e) => {
+                  // Не переходить если клик был на кнопках голосования
+                  if ((e.target as HTMLElement).closest('[data-vote-buttons]')) {
+                    return;
+                  }
+                  navigate(`/initiatives/${item.id}`);
+                }}
+              >
+                <div style={{ cursor: 'pointer' }}>
+                  <InitiativeCard 
+                    initiative={item} 
+                    showFullDescription={false} 
+                    onVoteChange={handleVoteChange}
+                  />
+                </div>
               </div>
             ))}
           </div>
