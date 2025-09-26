@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"crypto/tls"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"net/smtp"
@@ -50,14 +51,47 @@ func (s *SMTPSender) SendVerificationCode(ctx context.Context, to string, code s
 	if s.host == "" || s.user == "" || s.pass == "" || s.from == "" || s.port == 0 {
 		return errors.New("smtp is not configured")
 	}
-	subject := "Код подтверждения e‑mail"
-	body := fmt.Sprintf("Ваш код подтверждения: %s. Он действителен %d минут.", code, s.ttlMin)
+	subject := fmt.Sprintf("%s: одноразовый код для входа в MeetAx Next", code)
+	plainBody := fmt.Sprintf("Ваш код для входа в MeetAx Next: %s\r\nДействует %d минут. Если вы не запрашивали вход — игнорируйте это письмо.\r\n\r\nКоманда MeetAx\r\nКанал проекта: https://myteam.mail.ru/profile/AoLJns1GcHktTLbfCmc\r\nПоддержка: https://myteam.mail.ru/profile/AoLJwqc5Q6QgFvo3ED0\r\n", code, s.ttlMin)
+	htmlBody := fmt.Sprintf(`<!DOCTYPE html>
+<html lang="ru">
+  <body style="margin:0;padding:24px;background:#f6f8fa;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#111827;line-height:1.6;">
+    <div style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:12px;padding:24px;box-shadow:0 4px 16px rgba(0,0,0,0.06);">
+      <h1 style="margin:0 0 12px;font-size:20px;color:#111827;">Вход в MeetAx Next</h1>
+      <p style="margin:0 0 16px;color:#374151;">Ваш одноразовый код для входа. Не сообщайте его никому.</p>
+      <div style="display:inline-block;margin:8px 0 16px;padding:12px 16px;border-radius:12px;background:#f3f4f6;border:1px solid #e5e7eb;">
+        <span style="font-size:32px;letter-spacing:6px;font-weight:700;color:#111827;">%s</span>
+      </div>
+      <p style="margin:0 0 12px;color:#374151;">Код действует <strong>%d минут</strong>.</p>
+      <p style="margin:0 0 12px;color:#6b7280;">Если вы не запрашивали вход в систему MeetAx Next, просто проигнорируйте это письмо.</p>
+      <hr style="border:none;border-top:1px solid #e5e7eb;margin:20px 0;" />
+      <p style="margin:0 0 8px;color:#374151;">С уважением,<br/>Команда MeetAx</p>
+      <p style="margin:0 0 4px;">
+        <a href="https://myteam.mail.ru/profile/AoLJns1GcHktTLbfCmc" style="color:#2563eb;text-decoration:none;">Канал проекта</a>
+        <span style="color:#9ca3af;"> · </span>
+        <a href="https://myteam.mail.ru/profile/AoLJwqc5Q6QgFvo3ED0" style="color:#2563eb;text-decoration:none;">Поддержка проекта</a>
+      </p>
+      <p style="margin:8px 0 0;color:#9ca3af;font-size:12px;">Письмо отправлено автоматически, отвечать на него не нужно.</p>
+    </div>
+  </body>
+</html>`, code, s.ttlMin)
+
+	// multipart/alternative: text/plain + text/html, корректная кодировка Subject
+	b64 := func(s string) string { return base64.StdEncoding.EncodeToString([]byte(s)) }
+	subjectEnc := fmt.Sprintf("=?UTF-8?B?%s?=", b64(subject))
+	boundary := fmt.Sprintf("=_MeetAxNext_%s", code)
 	msg := "From: " + s.from + "\r\n" +
 		"To: " + to + "\r\n" +
-		"Subject: " + subject + "\r\n" +
+		"Subject: " + subjectEnc + "\r\n" +
 		"MIME-Version: 1.0\r\n" +
+		"Content-Type: multipart/alternative; boundary=\"" + boundary + "\"\r\n\r\n" +
+		"--" + boundary + "\r\n" +
 		"Content-Type: text/plain; charset=UTF-8\r\n\r\n" +
-		body
+		plainBody + "\r\n" +
+		"--" + boundary + "\r\n" +
+		"Content-Type: text/html; charset=UTF-8\r\n\r\n" +
+		htmlBody + "\r\n" +
+		"--" + boundary + "--\r\n"
 
 	addr := fmt.Sprintf("%s:%d", s.host, s.port)
 	var c *smtp.Client

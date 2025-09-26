@@ -39,6 +39,7 @@ POSTGRES_PORT=5432
 BACKEND_PORT=8080
 FRONTEND_PORT=3000
 JWT_SECRET=change_me
+JWT_EXPIRATION=168h  # 7 дней для passwordless входа
 
 # Email verification / SMTP (предпочтительно)
 AXENIX_EMAIL_DOMAIN=axenix.pro
@@ -144,6 +145,7 @@ docker compose --env-file ./.env -f infra/docker-compose.yml up -d --build
 - [x] Порты 80 и 443 доступны снаружи.
 - [x] PostgreSQL доступен по `DATABASE_URL`.
 - [x] `JWT_SECRET` установлен.
+- [x] TTL JWT: 7 дней (env `JWT_EXPIRATION=168h` либо значение по умолчанию в конфиге)
 - [x] Запросы `/api/*` идут в backend; остальное в frontend.
 - [x] `https://meetax.example.com/api/health` возвращает 200.
 

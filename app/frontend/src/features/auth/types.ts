@@ -27,3 +27,8 @@ export interface LoginRequest {
   login: string;
   password: string;
 }
+
+export interface EmailCodeLoginRequest {
+  email: string;
+  emailCode: string;
+}

@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useCallback, useEffect, ReactNode } from 'react';
 import { apiClient } from '../../shared/lib/api-client';
 import { authApi } from './api';
-import { User, LoginRequest, RegisterRequest } from './types';
+import { User, LoginRequest, RegisterRequest, EmailCodeLoginRequest } from './types';
 
 interface AuthContextType {
   user: User | null;
@@ -9,6 +9,7 @@ interface AuthContextType {
   isAuthenticated: boolean;
   isAdmin: boolean;
   login: (data: LoginRequest) => Promise<void>;
+  loginByEmailCode: (data: EmailCodeLoginRequest) => Promise<void>;
   register: (data: RegisterRequest) => Promise<void>;
   requestEmailCode: (email: string) => Promise<void>;
   logout: () => void;
@@ -45,6 +46,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(response.user);
   }, []);
 
+  const loginByEmailCode = useCallback(async (data: EmailCodeLoginRequest) => {
+    const response = await authApi.loginByEmailCode(data);
+    localStorage.setItem('token', response.token);
+    apiClient.setToken(response.token);
+    setUser(response.user);
+  }, []);
+
   const register = useCallback(async (data: RegisterRequest) => {
     const response = await authApi.register(data);
     localStorage.setItem('token', response.token);
@@ -68,6 +76,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     isAuthenticated: !!user,
     isAdmin: !!user?.isAdmin,
     login,
+    loginByEmailCode,
     register,
     requestEmailCode,
     logout,

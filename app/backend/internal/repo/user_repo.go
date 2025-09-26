@@ -120,6 +120,34 @@ func (r *UserRepository) GetByID(ctx context.Context, id uuid.UUID) (*domain.Use
 	return user, nil
 }
 
+// GetByEmail получает пользователя по e-mail
+func (r *UserRepository) GetByEmail(ctx context.Context, email string) (*domain.User, error) {
+	const query = `
+        SELECT id, login, display_name, password_hash, email, email_verified_at, created_at, updated_at
+        FROM users
+        WHERE email = $1
+    `
+
+	user := &domain.User{}
+	err := r.db.Pool.QueryRow(ctx, query, email).Scan(
+		&user.ID,
+		&user.Login,
+		&user.DisplayName,
+		&user.PasswordHash,
+		&user.Email,
+		&user.EmailVerifiedAt,
+		&user.CreatedAt,
+		&user.UpdatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, domain.ErrNotFound
+		}
+		return nil, fmt.Errorf("failed to get user by email: %w", err)
+	}
+	return user, nil
+}
+
 // List получает список всех пользователей (для выбора ответственных)
 func (r *UserRepository) List(ctx context.Context) ([]domain.UserBrief, error) {
 	query := `

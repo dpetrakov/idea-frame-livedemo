@@ -378,3 +378,45 @@ tasks:
         role: DV
         title: Профилирование запросов и индексы под сортировку по голосам
         status: planned
+
+  - id: TK-010
+    title: V2 — Passwordless вход по e‑mail коду с авто‑регистрацией
+    order: 100
+    status: planned
+    frRefs: [V2-Passwordless]
+    context:
+      prd: "docs/prd.md#9.9-Упрощённый-вход/регистрация-по-e‑mail-коду-(passwordless)"
+      architecture: "docs/architecture.md#аутентификация-и-e-mail-верификация"
+      dbml: "db/schema.dbml#email_codes"
+      openapi: "docs/openapi.yaml#/paths/~1auth~1login-by-email-code"
+      deployment: "docs/deployment.md#переменные-окружения"
+    acceptanceCriteria:
+      - text: "В OpenAPI описан POST /auth/login-by-email-code; срок JWT 7 дней"
+        done: false
+      - text: "Сервер: проверка домена, валидация и погашение кода; авто‑создание пользователя"
+        done: false
+      - text: "Парсинг имени/фамилии из e‑mail по правилам PRD; капитализация"
+        done: false
+      - text: "Фронтенд: экран входа без логина/пароля; поля e‑mail+код; UX ошибок"
+        done: false
+      - text: "Поля login/passwordHash оставлены в БД для обратной совместимости"
+        done: true
+    subtasks:
+      - id: TK-010/AN
+        role: AN
+        title: Спецификация passwordless входа и разбор имени
+        status: done
+        outputs:
+          - docs/specs/TK-010.md
+      - id: TK-010/BE
+        role: BE
+        title: Эндпоинт /auth/login-by-email-code и авто‑регистрация
+        status: planned
+      - id: TK-010/FE
+        role: FE
+        title: Обновление экрана логина под e‑mail+код
+        status: planned
+      - id: TK-010/DV
+        role: DV
+        title: Обновить JWT срок до 7 дней и док по деплою
+        status: planned

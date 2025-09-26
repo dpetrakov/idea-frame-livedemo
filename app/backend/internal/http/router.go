@@ -57,6 +57,7 @@ func NewRouter(
 			r.Post("/request-email-code", authHandler.RequestEmailCode)
 			r.Post("/register", authHandler.Register)
 			r.Post("/login", authHandler.Login)
+			r.Post("/login-by-email-code", authHandler.LoginByEmailCode)
 		})
 
 		// Защищённые маршруты

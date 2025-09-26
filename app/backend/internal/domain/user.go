@@ -37,6 +37,12 @@ type UserLoginRequest struct {
 	Password string `json:"password" validate:"required"`
 }
 
+// EmailCodeLoginRequest запрос на вход по e-mail коду (passwordless)
+type EmailCodeLoginRequest struct {
+	Email     string `json:"email"`
+	EmailCode string `json:"emailCode"`
+}
+
 // AuthResponse ответ с токеном авторизации
 type AuthResponse struct {
 	User      *User     `json:"user"`
@@ -100,6 +106,20 @@ func (r *UserLoginRequest) Validate() error {
 	}
 	if r.Password == "" {
 		return ErrInvalidInput("password is required")
+	}
+	return nil
+}
+
+// Validate проверяет корректность данных для входа по e-mail коду
+func (r *EmailCodeLoginRequest) Validate() error {
+	if strings.TrimSpace(r.Email) == "" {
+		return ErrInvalidField("email", "email is required")
+	}
+	if _, err := mail.ParseAddress(r.Email); err != nil {
+		return ErrInvalidField("email", "invalid email format")
+	}
+	if len(strings.TrimSpace(r.EmailCode)) != 6 {
+		return ErrInvalidField("emailCode", "emailCode must be 6 characters")
 	}
 	return nil
 }

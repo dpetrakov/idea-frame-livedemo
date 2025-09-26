@@ -118,6 +118,34 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(resp)
 }
 
+// LoginByEmailCode обработчик входа POST /auth/login-by-email-code
+func (h *AuthHandler) LoginByEmailCode(w http.ResponseWriter, r *http.Request) {
+	var req domain.EmailCodeLoginRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		middleware.RespondWithError(w, r, http.StatusBadRequest, "Invalid request body", "VALIDATION_ERROR")
+		return
+	}
+
+	resp, err := h.authService.LoginByEmailCode(r.Context(), &req)
+	if err != nil {
+		var validationErr domain.ValidationError
+		if errors.As(err, &validationErr) {
+			middleware.RespondWithError(w, r, http.StatusBadRequest, validationErr.Message, "VALIDATION_ERROR")
+			return
+		}
+		if errors.Is(err, domain.ErrInvalidCredentials) {
+			middleware.RespondWithError(w, r, http.StatusUnauthorized, "Invalid credentials", "INVALID_CREDENTIALS")
+			return
+		}
+		middleware.RespondWithError(w, r, http.StatusInternalServerError, "Failed to login by email code", "INTERNAL_ERROR")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(resp)
+}
+
 // GetCurrentUser обработчик получения текущего пользователя GET /users/me
 func (h *AuthHandler) GetCurrentUser(w http.ResponseWriter, r *http.Request) {
 	// Получаем userID из контекста (добавлен middleware Auth)

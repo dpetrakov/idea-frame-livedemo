@@ -206,6 +206,154 @@ func (s *AuthService) Login(ctx context.Context, req *domain.UserLoginRequest) (
 	}, nil
 }
 
+// LoginByEmailCode вход или авто-регистрация по e-mail коду
+func (s *AuthService) LoginByEmailCode(ctx context.Context, req *domain.EmailCodeLoginRequest) (*domain.AuthResponse, error) {
+	// Валидация запроса
+	if err := req.Validate(); err != nil {
+		return nil, err
+	}
+
+	email := strings.ToLower(strings.TrimSpace(req.Email))
+	if _, err := mail.ParseAddress(email); err != nil {
+		return nil, domain.ErrInvalidField("email", "invalid email format")
+	}
+	if !strings.HasSuffix(email, "@"+s.cfg.AxenixEmailDomain) {
+		return nil, domain.ErrInvalidField("email", fmt.Sprintf("email domain must be %s", s.cfg.AxenixEmailDomain))
+	}
+
+	// Проверка кода
+	ok, err := s.emailRepo.FindValid(ctx, email, req.EmailCode)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, domain.ErrInvalidInput("invalid or expired email code")
+	}
+
+	// Пытаемся найти пользователя по e-mail
+	var user *domain.User
+	user, err = s.userRepo.GetByEmail(ctx, email)
+	if err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			// Создаём нового пользователя
+			now := time.Now()
+			displayName := parseDisplayNameFromEmail(email)
+			login := generateLoginFromEmail(email)
+			passwordHash, err := security.HashPassword(generateRandomSecret())
+			if err != nil {
+				return nil, errors.New("failed to hash password")
+			}
+			user = &domain.User{
+				Login:           login,
+				DisplayName:     displayName,
+				Email:           email,
+				PasswordHash:    passwordHash,
+				EmailVerifiedAt: &now,
+				CreatedAt:       now,
+				UpdatedAt:       now,
+			}
+			if err := s.userRepo.Create(ctx, user); err != nil {
+				// Если конфликт логина, попробуем сгенерировать ещё несколько вариантов
+				if errors.Is(err, domain.ErrConflict) {
+					for i := 0; i < 1000; i++ {
+						user.Login = generateLoginFromEmailWithSuffix(email, i)
+						if err2 := s.userRepo.Create(ctx, user); err2 == nil {
+							break
+						} else if !errors.Is(err2, domain.ErrConflict) {
+							return nil, err2
+						}
+					}
+				} else {
+					return nil, err
+				}
+			}
+		} else {
+			return nil, err
+		}
+	}
+
+	// Помечаем код использованным (не критично, но желательно)
+	_ = s.emailRepo.MarkUsed(ctx, email, req.EmailCode)
+
+	// Генерируем токен на срок из конфигурации (обновим до 7 дней через cfg)
+	token, expiresAt, err := s.jwtManager.GenerateToken(user.ID, user.Login, user.DisplayName)
+	if err != nil {
+		return nil, errors.New("failed to generate token")
+	}
+
+	user.PasswordHash = ""
+	user.IsAdmin = s.isAdminEmail(user.Email)
+
+	return &domain.AuthResponse{User: user, Token: token, ExpiresAt: expiresAt}, nil
+}
+
+// parseDisplayNameFromEmail извлекает имя и фамилию из local-part e-mail
+func parseDisplayNameFromEmail(email string) string {
+	local := strings.SplitN(email, "@", 2)[0]
+	parts := strings.Split(local, ".")
+	if len(parts) == 0 {
+		return capitalize(local)
+	}
+	if len(parts) == 1 {
+		return capitalize(parts[0])
+	}
+	// 2 части: имя + фамилия; 3+ частей: имя + последняя фамилия
+	first := capitalize(parts[0])
+	last := capitalize(parts[len(parts)-1])
+	if last == "" {
+		return first
+	}
+	return first + " " + last
+}
+
+func capitalize(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return s
+	}
+	lower := strings.ToLower(s)
+	return strings.ToUpper(lower[:1]) + lower[1:]
+}
+
+// generateLoginFromEmail генерирует базовый логин из local-part e-mail
+func generateLoginFromEmail(email string) string {
+	return sanitizeLogin(strings.SplitN(email, "@", 2)[0])
+}
+
+// generateLoginFromEmailWithSuffix генерирует логин с числовым суффиксом
+func generateLoginFromEmailWithSuffix(email string, n int) string {
+	base := sanitizeLogin(strings.SplitN(email, "@", 2)[0])
+	if n <= 0 {
+		return base
+	}
+	return fmt.Sprintf("%s-%03d", base, n)
+}
+
+// sanitizeLogin оставляет только [a-z0-9._-] и обрезает до 32 символов
+func sanitizeLogin(local string) string {
+	local = strings.ToLower(local)
+	b := make([]rune, 0, len(local))
+	for _, r := range local {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '.' || r == '_' || r == '-' {
+			b = append(b, r)
+		}
+	}
+	s := string(b)
+	if len(s) > 32 {
+		s = s[:32]
+	}
+	if s == "" {
+		s = "user"
+	}
+	return s
+}
+
+// generateRandomSecret генерирует случайную строку для захешированного пароля
+func generateRandomSecret() string {
+	// Используем текущее время как простой источник; для продакшена можно заменить на криптостойкий
+	return fmt.Sprintf("%d-%d", time.Now().UnixNano(), time.Now().Unix())
+}
+
 // GetUserByID получение пользователя по ID
 func (s *AuthService) GetUserByID(ctx context.Context, id uuid.UUID) (*domain.User, error) {
 	user, err := s.userRepo.GetByID(ctx, id)

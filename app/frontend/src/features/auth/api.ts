@@ -1,5 +1,5 @@
 import { apiClient } from '../../shared/lib/api-client';
-import { AuthResponse, LoginRequest, RegisterRequest, User } from './types';
+import { AuthResponse, LoginRequest, RegisterRequest, User, EmailCodeLoginRequest } from './types';
 
 export const authApi = {
   async register(data: RegisterRequest): Promise<AuthResponse> {
@@ -8,6 +8,10 @@ export const authApi = {
 
   async login(data: LoginRequest): Promise<AuthResponse> {
     return apiClient.post<AuthResponse>('/v1/auth/login', data);
+  },
+
+  async loginByEmailCode(data: EmailCodeLoginRequest): Promise<AuthResponse> {
+    return apiClient.post<AuthResponse>('/v1/auth/login-by-email-code', data);
   },
 
   async getCurrentUser(): Promise<User> {

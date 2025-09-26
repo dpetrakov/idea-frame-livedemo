@@ -78,7 +78,7 @@ paths:
                   displayName: "Alex K"
                   createdAt: "2023-12-07T10:30:00Z"
                 token: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-                expiresAt: "2023-12-08T10:30:00Z"
+                expiresAt: "2023-12-14T10:30:00Z"
         '400':
           description: "Ошибка валидации"
           content:
@@ -124,6 +124,7 @@ paths:
       description: "Аутентификация пользователя и выдача JWT токена"
       tags: ["Auth"]
       security: []
+      deprecated: true
       requestBody:
         required: true
         content:
@@ -148,6 +149,35 @@ paths:
                 $ref: '#/components/schemas/Error'
         '401':
           description: "Неверные учётные данные"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /auth/login-by-email-code:
+    post:
+      summary: "Вход по e‑mail коду (passwordless)"
+      description: "Аутентификация по одноразовому коду; при отсутствии пользователя создаётся новый"
+      tags: ["Auth"]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmailCodeLogin'
+            example:
+              email: "alex@axenix.pro"
+              emailCode: "123456"
+      responses:
+        '200':
+          description: "Успешная авторизация"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          description: "Ошибка валидации или неверный/просроченный код"
           content:
             application/json:
               schema:
@@ -557,7 +587,7 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
-      description: "JWT токен со сроком жизни 24 часа"
+      description: "JWT токен со сроком жизни 7 дней"
 
   responses:
     Unauthorized:
@@ -796,7 +826,7 @@ components:
           type: string
           format: date-time
           description: "Время истечения токена"
-          example: "2023-12-08T10:30:00Z"
+          example: "2023-12-14T10:30:00Z"
 
     InitiativeCreate:
       type: object
@@ -994,6 +1024,24 @@ components:
           format: email
           description: "E‑mail для отправки кода (сервер проверяет домен)"
           example: "alex@axenix.pro"
+
+    EmailCodeLogin:
+      type: object
+      required:
+        - email
+        - emailCode
+      properties:
+        email:
+          type: string
+          format: email
+          description: "Корпоративный e‑mail"
+          example: "alex@axenix.pro"
+        emailCode:
+          type: string
+          minLength: 6
+          maxLength: 6
+          description: "Одноразовый код подтверждения e‑mail"
+          example: "123456"
 
     VoteRequest:
       type: object

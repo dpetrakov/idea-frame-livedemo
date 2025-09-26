@@ -45,7 +45,7 @@ func Load() (*Config, error) {
 		JWTSecret:            getEnvRequired("JWT_SECRET"),
 		Environment:          getEnv("ENV", "dev"),
 		LogLevel:             getEnv("LOG_LEVEL", "info"),
-		JWTExpiration:        24 * time.Hour, // 24 часа как требуется в спецификации
+		JWTExpiration:        7 * 24 * time.Hour, // 7 дней как требуется в PRD V2 (passwordless)
 		AxenixEmailDomain:    getEnv("AXENIX_EMAIL_DOMAIN", "axenix.pro"),
 		EmailCodesTTLMinutes: getEnvInt("EMAIL_CODES_TTL_MINUTES", 10),
 
