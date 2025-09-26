@@ -33,6 +33,9 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Нормализуем e-mail сразу после получения
+	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
+
 	resp, err := h.authService.Register(r.Context(), &req)
 	if err != nil {
 		var validationErr domain.ValidationError
@@ -61,7 +64,7 @@ func (h *AuthHandler) RequestEmailCode(w http.ResponseWriter, r *http.Request) {
 		middleware.RespondWithError(w, r, http.StatusBadRequest, "Invalid request body", "VALIDATION_ERROR")
 		return
 	}
-	email := strings.TrimSpace(req.Email)
+	email := strings.ToLower(strings.TrimSpace(req.Email))
 	if email == "" {
 		middleware.RespondWithError(w, r, http.StatusBadRequest, "email is required", "VALIDATION_ERROR")
 		return
@@ -125,6 +128,9 @@ func (h *AuthHandler) LoginByEmailCode(w http.ResponseWriter, r *http.Request) {
 		middleware.RespondWithError(w, r, http.StatusBadRequest, "Invalid request body", "VALIDATION_ERROR")
 		return
 	}
+
+	// Нормализуем e-mail сразу после получения
+	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
 
 	resp, err := h.authService.LoginByEmailCode(r.Context(), &req)
 	if err != nil {
